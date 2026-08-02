@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#1e40af" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<title>Vision &amp; Velocity</title>
+
+<!--
+  Flight recorder. Runs before anything else and depends on nothing.
+  This exists because the app is used on a phone, where there is no console to
+  open. If it ever fails to start, this paints the reason on screen.
+-->
+<script>
+(function () {
+  var stages = [];
+  window.__boot = function (name) { stages.push(name); };
+  window.__boot('head');
+
+  function esc(v) {
+    return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function paint(title, lines) {
+    var host = document.getElementById('root') || document.body;
+    if (!host) return;
+    var html = '<div style="padding:24px;background:#fff1f2;color:#7f1d1d;font:14px/1.5 -apple-system,system-ui,sans-serif;min-height:100vh">'
+      + '<h2 style="font-size:20px;font-weight:700;margin:0 0 12px">' + title + '</h2>';
+    for (var i = 0; i < lines.length; i++) {
+      html += '<p style="margin:0 0 8px;word-break:break-word">' + lines[i] + '</p>';
+    }
+    html += '<p style="margin-top:16px;font-size:12px;opacity:.8">Boot stages: ' + (stages.join(' &rarr; ') || 'none') + '</p></div>';
+    host.innerHTML = html;
+  }
+
+  window.onerror = function (message, source, lineno, colno, error) {
+    paint('Script error', [
+      '<b>Error:</b> ' + esc(message),
+      '<b>At:</b> ' + esc(lineno) + ':' + esc(colno),
+      '<b>Stack:</b> ' + esc((error && error.stack) || 'n/a')
+    ]);
+    return true;
+  };
+
+  // Rejected promises never reach window.onerror.
+  window.addEventListener('unhandledrejection', function (ev) {
+    var r = ev.reason;
+    paint('Unhandled promise rejection', ['<b>Reason:</b> ' + esc((r && (r.stack || r.message)) || r)]);
+  });
+
+  // A script that fails to LOAD fires on the element, not on window.
+  window.addEventListener('error', function (ev) {
+    var el = ev.target;
+    if (el && el !== window && el.tagName === 'SCRIPT' && el.src) {
+      paint('A required file could not load', ['<b>Blocked or missing:</b> ' + esc(el.src)]);
+    }
+  }, true);
+
+  // Nothing rendered at all = silent death (out of memory, killed tab).
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      if (stages.indexOf('done') === -1) {
+        paint('The app never finished starting', [
+          'No error was reported, which usually means the tab ran out of memory or the script was terminated.'
+        ]);
+      }
+    }, 8000);
+  });
+}());
+</script>
+</head>
+<body>
+<div id="root">
+  <div style="padding:40px;text-align:center;font:14px/1.5 -apple-system,system-ui,sans-serif;color:#475569">
+    <h2 style="font-size:18px;font-weight:700">Loading…</h2>
+  </div>
+</div>
+<script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

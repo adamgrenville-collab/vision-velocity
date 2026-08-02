@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+
+body {
+  background-color: #f8fafc;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-container {
+  min-height: 100vh;
+  padding-bottom: 8rem;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* Keeps the fixed save button clear of the iPhone home indicator. */
+.app-container > main {
+  padding-bottom: env(safe-area-inset-bottom);
+}
