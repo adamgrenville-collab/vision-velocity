@@ -1,39 +1,43 @@
 /**
  * Shape of a single day's entry, plus migration from older saved shapes.
  *
- * This file exists because the app's storage schema drifted while it was being
- * built, and the previous version tried to survive that with try/catch blocks
- * scattered through a useEffect. Everything that reads saved data goes through
- * `migrateEntry`, which is total: any input, however mangled, produces a valid
- * entry. That guarantee is what the tests pin down.
+ * The field list is not arbitrary — it mirrors the "Vision & Velocity Business
+ * Coaching" form the agent fills in with their broker each session. Activity and
+ * production keys exist so the session snapshot can total themselves instead of
+ * being reconstructed from memory. Don't add a counter that isn't on that form,
+ * and don't rename one without a migration.
+ *
+ * `migrateEntry` is total: any input, however mangled, produces a valid entry.
+ * That guarantee is what the tests pin down.
  */
 
+// Form: "Notes / Calls / Texts / Videos / Social Posts / Pop-Bys / Client Parties / Coffee"
 export const ACTIVITY_KEYS = [
-  'clientCheckIns',
+  'notes',
   'calls',
   'texts',
-  'notes',
   'videos',
-  'reSocial',
+  'socialPosts',
   'popBys',
-  'meetUps'
+  'clientParties',
+  'coffee'
 ];
 
-export const PRODUCTION_KEYS = [
-  'evaluations',
-  'showingsBuyers',
-  'showingsListings',
-  'listings',
-  'pendings',
-  'closings'
-];
+// Form: "Listings / Pendings / Closings"
+export const PRODUCTION_KEYS = ['listings', 'pendings', 'closings'];
 
-export const ACTION_PLAN_SLOTS = 5;
+// Form: "Action Plan — three clear actions"
+export const ACTION_PLAN_SLOTS = 3;
 
-/** Fields renamed between versions: oldName -> currentName. */
+/**
+ * Counters renamed across versions: oldName -> currentName.
+ * `clientCheckIns` is deliberately absent — it was never on the coaching form
+ * and is dropped rather than carried forward.
+ */
 const RENAMED_ACTIVITIES = {
-  social: 'reSocial',
-  coffee: 'meetUps'
+  social: 'socialPosts',
+  reSocial: 'socialPosts',
+  meetUps: 'coffee'
 };
 
 export function emptyActionPlan() {
@@ -48,11 +52,12 @@ export function blankEntry() {
   for (const key of PRODUCTION_KEYS) production[key] = 0;
 
   return {
-    mindset: { feeling: '', belief: '', win: '', peakTime: '', roadblock: '' },
+    mindset: { feeling: '', win: '', roadblock: '' },
     activities,
     production,
+    // The three actions committed to FOR this day. Set the evening before.
     actionPlan: emptyActionPlan(),
-    pipeline: ''
+    notes: ''
   };
 }
 
@@ -65,9 +70,7 @@ const toCount = (v) => {
 
 const toText = (v) => (typeof v === 'string' ? v : '');
 
-/**
- * Coerce anything into a valid entry. Never throws.
- */
+/** Coerce anything into a valid entry. Never throws. */
 export function migrateEntry(raw) {
   const entry = blankEntry();
   if (!isObject(raw)) return entry;
@@ -104,7 +107,7 @@ export function migrateEntry(raw) {
     });
   }
 
-  entry.pipeline = toText(raw.pipeline);
+  entry.notes = toText(raw.notes) || toText(raw.pipeline);
 
   return entry;
 }
@@ -119,7 +122,19 @@ export function migrateAll(raw) {
   return out;
 }
 
-/** Totals across the given date keys, for the roll-up and the coaching prompt. */
+/** True when nothing has been logged — used to keep untouched days out of storage. */
+export function isBlank(entry) {
+  if (!entry) return true;
+  const noCounts =
+    ACTIVITY_KEYS.every((k) => !entry.activities?.[k]) &&
+    PRODUCTION_KEYS.every((k) => !entry.production?.[k]);
+  const noText =
+    !entry.mindset?.feeling && !entry.mindset?.win && !entry.mindset?.roadblock && !entry.notes;
+  const noPlan = (entry.actionPlan || []).every((i) => !i.text && !i.done);
+  return noCounts && noText && noPlan;
+}
+
+/** Totals across the given date keys, for the roll-up and the session snapshot. */
 export function summarize(entriesByDate, dateKeys) {
   const totalActivities = {};
   for (const key of ACTIVITY_KEYS) totalActivities[key] = 0;
@@ -128,25 +143,56 @@ export function summarize(entriesByDate, dateKeys) {
   for (const key of PRODUCTION_KEYS) totalProduction[key] = 0;
 
   const roadblocks = [];
-  const peakTimes = { Morning: 0, Afternoon: 0, Evening: 0 };
+  let daysLogged = 0;
+  let targetsSet = 0;
+  let targetsDone = 0;
 
   for (const date of dateKeys) {
     const entry = entriesByDate[date];
-    if (!entry) continue;
+    if (!entry || isBlank(entry)) continue;
+    daysLogged += 1;
+
     for (const key of ACTIVITY_KEYS) totalActivities[key] += entry.activities?.[key] || 0;
     for (const key of PRODUCTION_KEYS) totalProduction[key] += entry.production?.[key] || 0;
     if (entry.mindset?.roadblock) roadblocks.push({ date, roadblock: entry.mindset.roadblock });
-    const peak = entry.mindset?.peakTime;
-    if (peak) peakTimes[peak] = (peakTimes[peak] || 0) + 1;
+
+    for (const item of entry.actionPlan || []) {
+      if (!item.text) continue;
+      targetsSet += 1;
+      if (item.done) targetsDone += 1;
+    }
   }
+
+  const conversations = totalActivities.calls + totalActivities.texts;
+  const totalActivity = ACTIVITY_KEYS.reduce((sum, key) => sum + totalActivities[key], 0);
 
   return {
     totalActivities,
     totalProduction,
     roadblocks,
-    peakTimes,
-    conversations: totalActivities.calls + totalActivities.texts
+    daysLogged,
+    targetsSet,
+    targetsDone,
+    conversations,
+    totalActivity
   };
+}
+
+/** Every date key in a window ending at `endKey`, oldest first. */
+export function keysInWindow(endKey, days) {
+  const out = [];
+  const [y, m, d] = String(endKey).split('-').map(Number);
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const date = new Date(y, m - 1, d - i);
+    out.push(
+      date.getFullYear() +
+        '-' +
+        String(date.getMonth() + 1).padStart(2, '0') +
+        '-' +
+        String(date.getDate()).padStart(2, '0')
+    );
+  }
+  return out;
 }
 
 /** The most recent N date keys present in storage, newest first. */

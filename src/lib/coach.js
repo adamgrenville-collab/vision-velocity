@@ -11,7 +11,7 @@
  * templates market-neutral. If a shared server key is ever reintroduced, the
  * server must build the prompt — see git history for a worked version.
  */
-import { buildPrompt } from './prompts.js';
+import { buildPrompt, rowsFromEntries } from './prompts.js';
 
 export const GEMINI_MODEL = 'gemini-2.5-flash';
 
@@ -61,25 +61,11 @@ export async function askCoach(kind, payload, apiKey) {
   return text ? { ok: true, text } : { ok: false, message: MESSAGES.upstream };
 }
 
-export { rowsFromEntries } from './prompts.js';
-
 export const coachPayloads = {
   reframe: (entry, market) => ({ feeling: entry.mindset.feeling, win: entry.mindset.win, market }),
   social: (entry, market) => ({ win: entry.mindset.win, market }),
   gap: (entriesByDate, dateKeys, market) => ({
-    rows: dateKeys
-      .map((date) => {
-        const e = entriesByDate[date];
-        if (!e) return null;
-        const conversations = (e.activities?.calls || 0) + (e.activities?.texts || 0);
-        return (
-          `Date: ${date}, Feeling: ${e.mindset?.feeling || '-'}, Win: ${e.mindset?.win || '-'}, ` +
-          `Peak Time: ${e.mindset?.peakTime || '-'}, Roadblock: ${e.mindset?.roadblock || '-'}, ` +
-          `Calls/Texts: ${conversations}, Check-ins: ${e.activities?.clientCheckIns || 0}, ` +
-          `Evals: ${e.production?.evaluations || 0}, Pendings: ${e.production?.pendings || 0}.`
-        );
-      })
-      .filter(Boolean),
+    rows: rowsFromEntries(entriesByDate, dateKeys),
     market
   })
 };

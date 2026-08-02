@@ -87,24 +87,59 @@ describe('rowsFromEntries', () => {
   const entries = {
     '2026-08-01': {
       mindset: { feeling: 'focused', win: 'listing', roadblock: 'no leads' },
-      activities: { calls: 3, texts: 2, clientCheckIns: 1 },
-      production: { pendings: 1 }
+      activities: { calls: 3, texts: 2, popBys: 1, coffee: 1 },
+      production: { pendings: 1 },
+      actionPlan: [
+        { text: 'a', done: true },
+        { text: 'b', done: false },
+        { text: '', done: false }
+      ]
     }
   };
 
   it('summarises a day into one row', () => {
     const [row] = rowsFromEntries(entries, ['2026-08-01']);
-    expect(row).toContain('Calls/Texts: 5');
-    expect(row).toContain('Check-ins: 1');
-    expect(row).toContain('Pendings: 1');
+    expect(row).toContain('calls/texts 5');
+    expect(row).toContain('other touches 2');
+    expect(row).toContain('pendings 1');
+  });
+
+  it('reports commitment follow-through, which is the coaching signal', () => {
+    expect(rowsFromEntries(entries, ['2026-08-01'])[0]).toContain('actions 1/2');
+  });
+
+  it('carries feeling and roadblock through for context', () => {
+    const [row] = rowsFromEntries(entries, ['2026-08-01']);
+    expect(row).toContain('felt "focused"');
+    expect(row).toContain('blocked by "no leads"');
   });
 
   it('skips dates with no entry', () => {
     expect(rowsFromEntries(entries, ['2020-01-01'])).toEqual([]);
   });
 
-  it('tolerates entries missing whole sections', () => {
-    const [row] = rowsFromEntries({ '2026-08-01': {} }, ['2026-08-01']);
-    expect(row).toContain('Calls/Texts: 0');
+  it('omits days with nothing logged rather than padding with zeros', () => {
+    // An unlogged day is not evidence of a slow day, and rows of zeros would
+    // skew the coach toward scolding for days the agent simply did not open
+    // the app. Better to say nothing.
+    expect(rowsFromEntries({ '2026-08-01': {} }, ['2026-08-01'])).toEqual([]);
+  });
+
+  it('keeps a day that has only a mindset note', () => {
+    const only = { '2026-08-01': { mindset: { feeling: 'flat' } } };
+    expect(rowsFromEntries(only, ['2026-08-01'])[0]).toContain('felt "flat"');
+  });
+
+  it('never sends more rows than a coaching cycle', () => {
+    const many = {};
+    const keys = [];
+    for (let d = 1; d <= 20; d += 1) {
+      const key = `2026-08-${String(d).padStart(2, '0')}`;
+      many[key] = { activities: { calls: 1 } };
+      keys.push(key);
+    }
+    // rowsFromEntries itself is uncapped; buildPrompt is what enforces the cap.
+    expect(rowsFromEntries(many, keys)).toHaveLength(20);
+    expect(buildPrompt('gap', { rows: rowsFromEntries(many, keys) }).prompt).not.toContain('2026-08-08');
   });
 });

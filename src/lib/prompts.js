@@ -97,18 +97,28 @@ export function buildPrompt(kind, payload) {
   return builder(payload);
 }
 
-/** Turn the stored week into the compact rows the gap analysis reasons over. */
+/** Turn the stored cycle into the compact rows the gap analysis reasons over. */
 export function rowsFromEntries(entriesByDate, dateKeys) {
   return dateKeys
     .map((date) => {
       const e = entriesByDate[date];
       if (!e) return null;
-      const conversations = (e.activities?.calls || 0) + (e.activities?.texts || 0);
+      const a = e.activities || {};
+      const p = e.production || {};
+      const conversations = (a.calls || 0) + (a.texts || 0);
+      const done = (e.actionPlan || []).filter((i) => i.text && i.done).length;
+      const set = (e.actionPlan || []).filter((i) => i.text).length;
+      const touches =
+        (a.notes || 0) + (a.videos || 0) + (a.socialPosts || 0) +
+        (a.popBys || 0) + (a.clientParties || 0) + (a.coffee || 0);
+      if (!conversations && !touches && !set && !e.mindset?.feeling) return null;
+
       return (
-        `Date: ${date}, Feeling: ${e.mindset?.feeling || '-'}, Win: ${e.mindset?.win || '-'}, ` +
-        `Peak Time: ${e.mindset?.peakTime || '-'}, Roadblock: ${e.mindset?.roadblock || '-'}, ` +
-        `Calls/Texts: ${conversations}, Check-ins: ${e.activities?.clientCheckIns || 0}, ` +
-        `Evals: ${e.production?.evaluations || 0}, Pendings: ${e.production?.pendings || 0}.`
+        `${date}: calls/texts ${conversations}, other touches ${touches}, ` +
+        `listings ${p.listings || 0}, pendings ${p.pendings || 0}, closings ${p.closings || 0}, ` +
+        `actions ${done}/${set}` +
+        (e.mindset?.feeling ? `, felt "${e.mindset.feeling}"` : '') +
+        (e.mindset?.roadblock ? `, blocked by "${e.mindset.roadblock}"` : '')
       );
     })
     .filter(Boolean);

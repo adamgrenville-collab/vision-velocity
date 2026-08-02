@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { todayKey, shiftKey } from './lib/dates.js';
-import { blankEntry, migrateAll, summarize, recentKeys } from './lib/entries.js';
+import { todayKey, shiftKey, formatKey } from './lib/dates.js';
+import { blankEntry, migrateAll, summarize, keysInWindow } from './lib/entries.js';
 import { readJson, writeJson, readRaw, writeRaw, remove, KEYS } from './lib/storage.js';
 import { askCoach, coachPayloads } from './lib/coach.js';
 
@@ -9,8 +9,11 @@ import Settings from './components/Settings.jsx';
 import DateNav from './components/DateNav.jsx';
 import MindsetCheckIn from './components/MindsetCheckIn.jsx';
 import ActionPlan from './components/ActionPlan.jsx';
-import ActivityTally from './components/ActivityTally.jsx';
+import CounterList, { ACTIVITY_ITEMS, PRODUCTION_ITEMS } from './components/CounterList.jsx';
 import Rollup from './components/Rollup.jsx';
+
+// Matches the coaching session cadence: every two weeks.
+const CYCLE_DAYS = 14;
 
 export default function App() {
   const [apiKey, setApiKey] = useState(() => readRaw(KEYS.apiKey) || '');
@@ -23,10 +26,10 @@ export default function App() {
   const [aiResponse, setAiResponse] = useState({ type: '', content: '' });
   const [justSaved, setJustSaved] = useState(false);
 
-  // `entries` is the single source of truth; the visible day is derived from it.
-  // Keeping one copy is what removes the old bug where saving clobbered the
-  // form and wiped the coach's reply off screen.
+  // `entries` is the single source of truth; visible days are derived from it.
   const entry = useMemo(() => entries[dateKey] ?? blankEntry(), [entries, dateKey]);
+  const tomorrowKey = useMemo(() => shiftKey(dateKey, 1), [dateKey]);
+  const tomorrow = useMemo(() => entries[tomorrowKey] ?? blankEntry(), [entries, tomorrowKey]);
 
   // Persist on a short debounce so a dropped phone never costs a day's tally.
   useEffect(() => {
@@ -43,11 +46,13 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', flush);
   }, [entries]);
 
+  const updateEntryFor = useCallback((key, mutate) => {
+    setEntries((prev) => ({ ...prev, [key]: mutate(prev[key] ?? blankEntry()) }));
+  }, []);
+
   const updateEntry = useCallback(
-    (mutate) => {
-      setEntries((prev) => ({ ...prev, [dateKey]: mutate(prev[dateKey] ?? blankEntry()) }));
-    },
-    [dateKey]
+    (mutate) => updateEntryFor(dateKey, mutate),
+    [dateKey, updateEntryFor]
   );
 
   const goToDate = (nextKey) => {
@@ -58,25 +63,28 @@ export default function App() {
   const setMindset = (field, value) =>
     updateEntry((e) => ({ ...e, mindset: { ...e.mindset, [field]: value } }));
 
-  const adjustActivity = (key, delta) =>
+  const adjust = (group) => (key, delta) =>
     updateEntry((e) => ({
       ...e,
-      activities: { ...e.activities, [key]: Math.max(0, (e.activities[key] || 0) + delta) }
+      [group]: { ...e[group], [key]: Math.max(0, (e[group][key] || 0) + delta) }
     }));
 
-  const toggleTarget = (index) =>
-    updateEntry((e) => {
-      const actionPlan = e.actionPlan.slice();
-      actionPlan[index] = { ...actionPlan[index], done: !actionPlan[index].done };
-      return { ...e, actionPlan };
-    });
-
-  const setTargetText = (index, text) =>
-    updateEntry((e) => {
-      const actionPlan = e.actionPlan.slice();
-      actionPlan[index] = { ...actionPlan[index], text };
-      return { ...e, actionPlan };
-    });
+  // A plan belongs to the day it is FOR, so editing tomorrow's writes to
+  // tomorrow's entry — which is why it is waiting there in the morning.
+  const planEditor = (targetKey) => ({
+    onToggle: (index) =>
+      updateEntryFor(targetKey, (e) => {
+        const actionPlan = e.actionPlan.slice();
+        actionPlan[index] = { ...actionPlan[index], done: !actionPlan[index].done };
+        return { ...e, actionPlan };
+      }),
+    onChangeText: (index, text) =>
+      updateEntryFor(targetKey, (e) => {
+        const actionPlan = e.actionPlan.slice();
+        actionPlan[index] = { ...actionPlan[index], text };
+        return { ...e, actionPlan };
+      })
+  });
 
   const saveNow = () => {
     writeJson(KEYS.entries, entries);
@@ -97,14 +105,13 @@ export default function App() {
   const saveSettings = ({ market: nextMarket, apiKey: nextKey }) => {
     setMarket(nextMarket);
     writeRaw(KEYS.market, nextMarket);
-
     setApiKey(nextKey);
     if (nextKey) writeRaw(KEYS.apiKey, nextKey);
     else remove(KEYS.apiKey);
   };
 
-  const weekKeys = recentKeys(entries, 7);
-  const summary = summarize(entries, weekKeys);
+  const cycleKeys = useMemo(() => keysInWindow(todayKey(), CYCLE_DAYS), []);
+  const summary = useMemo(() => summarize(entries, cycleKeys), [entries, cycleKeys]);
 
   return (
     <div className="app-container text-slate-900">
@@ -126,8 +133,8 @@ export default function App() {
 
       <nav className="sticky top-0 z-10 flex justify-center gap-4 border-b border-slate-200 bg-white p-4 shadow-xs">
         {[
-          { id: 'daily', label: 'Daily log', icon: 'calendar-line' },
-          { id: 'summary', label: 'Roll-up', icon: 'bar-chart-box-line' }
+          { id: 'daily', label: 'Tonight', icon: 'calendar-line' },
+          { id: 'summary', label: 'Session prep', icon: 'bar-chart-box-line' }
         ].map((item) => (
           <button
             key={item.id}
@@ -141,27 +148,59 @@ export default function App() {
         ))}
       </nav>
 
-      <main className="mx-auto max-w-2xl space-y-6 p-4">
+      <main className="mx-auto max-w-2xl space-y-5 p-4">
         {tab === 'daily' ? (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <DateNav
               dateKey={dateKey}
               onShift={(days) => goToDate(shiftKey(dateKey, days))}
               onToday={() => goToDate(todayKey())}
             />
 
+            <ActionPlan
+              title="Today's focus"
+              subtitle="What you committed to last night"
+              icon="sun-line"
+              accent="text-amber-600"
+              plan={entry.actionPlan}
+              emptyHint="Nothing was set for today. Plan tomorrow at the bottom of this screen."
+              {...planEditor(dateKey)}
+            />
+
             <MindsetCheckIn
               mindset={entry.mindset}
               onChange={setMindset}
               onReframe={() => runCoach('mindset', 'reframe', coachPayloads.reframe(entry, market))}
-              onDraftPost={() => runCoach('social', 'social', coachPayloads.social(entry, market))}
               isAiLoading={isAiLoading}
               aiResponse={aiResponse}
             />
 
-            <ActionPlan plan={entry.actionPlan} onToggle={toggleTarget} onChangeText={setTargetText} />
+            <CounterList
+              title="Activity"
+              icon="flashlight-line"
+              accent="text-red-600"
+              items={ACTIVITY_ITEMS}
+              values={entry.activities}
+              onAdjust={adjust('activities')}
+            />
 
-            <ActivityTally activities={entry.activities} onAdjust={adjustActivity} />
+            <CounterList
+              title="Production"
+              icon="award-line"
+              accent="text-emerald-700"
+              items={PRODUCTION_ITEMS}
+              values={entry.production}
+              onAdjust={adjust('production')}
+            />
+
+            <ActionPlan
+              title="Plan tomorrow"
+              subtitle={`Three actions for ${formatKey(tomorrowKey)}`}
+              icon="moon-line"
+              accent="text-indigo-600"
+              plan={tomorrow.actionPlan}
+              {...planEditor(tomorrowKey)}
+            />
 
             <div className="fixed bottom-6 left-1/2 w-full max-w-md -translate-x-1/2 px-4">
               <button
@@ -181,8 +220,8 @@ export default function App() {
         ) : (
           <Rollup
             summary={summary}
-            dayCount={weekKeys.length}
-            onAnalyze={() => runCoach('coaching', 'gap', coachPayloads.gap(entries, weekKeys, market))}
+            windowDays={CYCLE_DAYS}
+            onAnalyze={() => runCoach('coaching', 'gap', coachPayloads.gap(entries, cycleKeys, market))}
             isAiLoading={isAiLoading}
             aiResponse={aiResponse}
           />
