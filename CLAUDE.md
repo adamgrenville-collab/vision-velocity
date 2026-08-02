@@ -26,14 +26,16 @@ Tampa, FL. Phone-first. See [README.md](README.md) for the full rationale.
    `blankEntry()` and a coercion case in `migrateEntry()`.
 4. **`entries` is the single source of truth.** Don't add a second copy of the
    current day to state and sync it with an effect.
-5. **The server never accepts a prompt from the client.** `/api/coach` takes
-   `{ kind, payload }` and builds the text from `src/lib/prompts.js`. This app is
-   public and the key being spent is the operator's — an endpoint that forwards
-   arbitrary prompts is a free LLM proxy for the internet. Add a new coaching
-   feature by adding a *kind*, never by passing a string.
-6. **Nothing user-specific goes in a prompt template.** Market comes from
+5. **Bring-your-own-key only. Never add a shared API key.** Every AI call is
+   billed to the key the user supplied, from their browser. Whoever hosts this
+   must carry no cost and no abuse risk. If that is ever revisited, the server
+   must build prompts from `{ kind, payload }` and never accept prompt text —
+   see git history for a worked version.
+6. **The app must stay fully useful with no key.** Logging, roll-up and the
+   meeting recap never depend on the network. Coaching is the only extra.
+7. **Nothing user-specific goes in a prompt template.** Market comes from
    settings. No brokerage, no city, no name baked into `prompts.js`.
-7. **Run `npm run check` before committing.** Lint, tests, build.
+8. **Run `npm run check` before committing.** Lint, tests, build.
 
 ## Layout
 

@@ -14,7 +14,6 @@
     "icons": "node scripts/build-icons.mjs"
   },
   "dependencies": {
-    "@netlify/blobs": "^10.7.11",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

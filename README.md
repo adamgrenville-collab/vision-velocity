@@ -71,35 +71,22 @@ in-progress edits and wiped the coach's reply off screen. Don't reintroduce that
 
 ## How coaching is powered
 
-The app is public, so there are two paths and it tries them in order:
+**Bring-your-own-key, and only that.** Each person adds their own Gemini key in
+Settings; it is stored in their browser and sent only to Google. There is no
+shared key, no server, and no environment variable to configure — whoever hosts
+this app is never in the payment path and carries no cost or abuse risk.
 
-1. **The shared server key** — `netlify/functions/coach.mjs`, rate limited per IP
-   per day. Free for the visitor.
-2. **The visitor's own Gemini key** — set in Settings, stored only in their
-   browser, sent only to Google. Used when the server has no key configured or
-   the daily cap is hit.
+Google AI Studio has a free tier, so for most users this costs nothing.
 
-**The client never sends a prompt.** It sends `{ kind, payload }`, and the
-function builds the prompt from `src/lib/prompts.js`. That is the whole reason
-this endpoint is not a free general-purpose LLM proxy for anyone who finds the
-URL. Never add an endpoint that accepts prompt text.
+The app is fully useful with no key at all. Logging, the roll-up and the meeting
+recap need no network. Coaching is the only thing a key unlocks.
 
-Input is length-capped and whitespace-collapsed in `prompts.js` before it reaches
-a template, so a pasted novel can't run up a bill and a payload can't smuggle in
-extra instruction lines.
-
-### Deploy configuration
-
-| Env var | Effect |
-| --- | --- |
-| `GEMINI_API_KEY` | **Unset by default.** Until you set it, the function returns 503 and every visitor uses their own key — so deploying costs nothing. |
-| `COACH_DAILY_LIMIT` | Free calls per IP per day. Defaults to 10. |
-| `GEMINI_MODEL` | Defaults to `gemini-2.5-flash`. |
-| `RATE_SALT` | Salt for hashing IPs in the rate-limit store. Set it. |
-
-Rate-limit counters live in Netlify Blobs keyed by date and a truncated hash of
-the IP — no raw addresses are stored. If Blobs is unavailable the function fails
-closed rather than handing out an unmetered key.
+Prompts are built in `src/lib/prompts.js`, which caps input length and keeps the
+templates market-neutral. **If a shared server key is ever added, the server must
+build the prompt from `{ kind, payload }` and never accept prompt text from the
+client** — otherwise the key becomes a free general-purpose LLM proxy for anyone
+who finds the URL. A worked version is in git history (`git log --diff-filter=D
+-- netlify/functions/coach.mjs`).
 
 Gemini 1.5 Flash was retired in September 2025; a fresh key returns 404 for it.
 
