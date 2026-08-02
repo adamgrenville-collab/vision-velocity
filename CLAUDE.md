@@ -35,7 +35,14 @@ Tampa, FL. Phone-first. See [README.md](README.md) for the full rationale.
    meeting recap never depend on the network. Coaching is the only extra.
 7. **Nothing user-specific goes in a prompt template.** Market comes from
    settings. No brokerage, no city, no name baked into `prompts.js`.
-8. **Run `npm run check` before committing.** Lint, tests, build.
+8. **The broker's Google Form is the spec.** Field names, ordering and wording in
+   `src/lib/googleForm.js` mirror it exactly. Don't add a counter or rename a
+   field without checking it against the form first — the whole value of this
+   app is that its output drops straight into his existing process.
+9. **Never build a submit path to the form.** The app produces a *prefilled
+   viewform link* the agent reviews and submits themselves. Posting to
+   `formResponse` on someone's behalf is out of bounds.
+10. **Run `npm run check` before committing.** Lint, tests, build.
 
 ## Layout
 

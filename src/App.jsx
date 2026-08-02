@@ -1,6 +1,14 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { todayKey, shiftKey, formatKey } from './lib/dates.js';
-import { blankEntry, migrateAll, summarize, keysInWindow } from './lib/entries.js';
+import { blankEntry, migrateAll, summarize } from './lib/entries.js';
+import {
+  blankSession,
+  migrateSessions,
+  migrateSession,
+  nextSession,
+  windowForSession,
+  DEFAULT_CYCLE_DAYS
+} from './lib/sessions.js';
 import { readJson, writeJson, readRaw, writeRaw, remove, KEYS } from './lib/storage.js';
 import { askCoach, coachPayloads } from './lib/coach.js';
 
@@ -11,14 +19,27 @@ import MindsetCheckIn from './components/MindsetCheckIn.jsx';
 import ActionPlan from './components/ActionPlan.jsx';
 import CounterList, { ACTIVITY_ITEMS, PRODUCTION_ITEMS } from './components/CounterList.jsx';
 import Rollup from './components/Rollup.jsx';
+import SessionPrep from './components/SessionPrep.jsx';
 
-// Matches the coaching session cadence: every two weeks.
-const CYCLE_DAYS = 14;
+/** Immutably set a dotted path, e.g. "pipeline.nextSteps" or "commitments.1.text". */
+function setIn(target, path, value) {
+  const [head, ...rest] = path.split('.');
+  const clone = Array.isArray(target) ? target.slice() : { ...target };
+  clone[head] = rest.length ? setIn(target[head], rest.join('.'), value) : value;
+  return clone;
+}
 
 export default function App() {
   const [apiKey, setApiKey] = useState(() => readRaw(KEYS.apiKey) || '');
   const [market, setMarket] = useState(() => readRaw(KEYS.market) || '');
+  const [name, setName] = useState(() => readRaw(KEYS.name) || '');
+  const [goals, setGoals] = useState(() => {
+    const saved = readJson(KEYS.goals, []);
+    return Array.isArray(saved) ? saved : [];
+  });
   const [entries, setEntries] = useState(() => migrateAll(readJson(KEYS.entries, {})));
+  const [sessions, setSessions] = useState(() => migrateSessions(readJson(KEYS.sessions, [])));
+
   const [dateKey, setDateKey] = useState(todayKey);
   const [tab, setTab] = useState('daily');
   const [showSettings, setShowSettings] = useState(false);
@@ -26,25 +47,36 @@ export default function App() {
   const [aiResponse, setAiResponse] = useState({ type: '', content: '' });
   const [justSaved, setJustSaved] = useState(false);
 
-  // `entries` is the single source of truth; visible days are derived from it.
   const entry = useMemo(() => entries[dateKey] ?? blankEntry(), [entries, dateKey]);
   const tomorrowKey = useMemo(() => shiftKey(dateKey, 1), [dateKey]);
   const tomorrow = useMemo(() => entries[tomorrowKey] ?? blankEntry(), [entries, tomorrowKey]);
 
-  // Persist on a short debounce so a dropped phone never costs a day's tally.
-  useEffect(() => {
-    const timer = setTimeout(() => writeJson(KEYS.entries, entries), 400);
-    return () => clearTimeout(timer);
-  }, [entries]);
+  // The upcoming session, or a fresh one a fortnight out if none is scheduled.
+  const activeSession = useMemo(() => {
+    const upcoming = nextSession(sessions, todayKey());
+    if (upcoming) return upcoming;
+    const seeded = blankSession(shiftKey(todayKey(), DEFAULT_CYCLE_DAYS));
+    return migrateSession(seeded);
+  }, [sessions]);
 
-  // A backgrounded tab may never run the debounce, so flush on the way out.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      writeJson(KEYS.entries, entries);
+      writeJson(KEYS.sessions, sessions);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [entries, sessions]);
+
   useEffect(() => {
     const flush = () => {
-      if (document.visibilityState === 'hidden') writeJson(KEYS.entries, entries);
+      if (document.visibilityState === 'hidden') {
+        writeJson(KEYS.entries, entries);
+        writeJson(KEYS.sessions, sessions);
+      }
     };
     document.addEventListener('visibilitychange', flush);
     return () => document.removeEventListener('visibilitychange', flush);
-  }, [entries]);
+  }, [entries, sessions]);
 
   const updateEntryFor = useCallback((key, mutate) => {
     setEntries((prev) => ({ ...prev, [key]: mutate(prev[key] ?? blankEntry()) }));
@@ -53,6 +85,30 @@ export default function App() {
   const updateEntry = useCallback(
     (mutate) => updateEntryFor(dateKey, mutate),
     [dateKey, updateEntryFor]
+  );
+
+  /** Write a field on the active session, creating the record on first edit. */
+  const updateSession = useCallback(
+    (path, value) => {
+      setSessions((prev) => {
+        const exists = prev.some((s) => s.id === activeSession.id);
+        const base = exists ? prev : [...prev, activeSession];
+        return base.map((s) => (s.id === activeSession.id ? setIn(s, path, value) : s));
+      });
+    },
+    [activeSession]
+  );
+
+  const setSessionDate = useCallback(
+    (date) => {
+      if (!date) return;
+      setSessions((prev) => {
+        const exists = prev.some((s) => s.id === activeSession.id);
+        const base = exists ? prev : [...prev, activeSession];
+        return base.map((s) => (s.id === activeSession.id ? { ...s, date } : s));
+      });
+    },
+    [activeSession]
   );
 
   const goToDate = (nextKey) => {
@@ -69,8 +125,6 @@ export default function App() {
       [group]: { ...e[group], [key]: Math.max(0, (e[group][key] || 0) + delta) }
     }));
 
-  // A plan belongs to the day it is FOR, so editing tomorrow's writes to
-  // tomorrow's entry — which is why it is waiting there in the morning.
   const planEditor = (targetKey) => ({
     onToggle: (index) =>
       updateEntryFor(targetKey, (e) => {
@@ -88,6 +142,7 @@ export default function App() {
 
   const saveNow = () => {
     writeJson(KEYS.entries, entries);
+    writeJson(KEYS.sessions, sessions);
     setJustSaved(true);
     setTimeout(() => setJustSaved(false), 1600);
   };
@@ -102,40 +157,68 @@ export default function App() {
     }
   };
 
-  const saveSettings = ({ market: nextMarket, apiKey: nextKey }) => {
-    setMarket(nextMarket);
-    writeRaw(KEYS.market, nextMarket);
-    setApiKey(nextKey);
-    if (nextKey) writeRaw(KEYS.apiKey, nextKey);
+  const saveSettings = (next) => {
+    setName(next.name);
+    writeRaw(KEYS.name, next.name);
+    setMarket(next.market);
+    writeRaw(KEYS.market, next.market);
+    setGoals(next.goals);
+    writeJson(KEYS.goals, next.goals);
+    setApiKey(next.apiKey);
+    if (next.apiKey) writeRaw(KEYS.apiKey, next.apiKey);
     else remove(KEYS.apiKey);
   };
 
-  const cycleKeys = useMemo(() => keysInWindow(todayKey(), CYCLE_DAYS), []);
+  // The roll-up follows the real coaching window, not a fixed fortnight.
+  const cycleKeys = useMemo(
+    () => windowForSession(sessions, activeSession),
+    [sessions, activeSession]
+  );
   const summary = useMemo(() => summarize(entries, cycleKeys), [entries, cycleKeys]);
+
+  const daysToSession = useMemo(() => {
+    const diff = Math.round(
+      (new Date(activeSession.date) - new Date(todayKey())) / 86400000
+    );
+    return Number.isFinite(diff) ? diff : null;
+  }, [activeSession.date]);
+
+  const TABS = [
+    { id: 'daily', label: 'Tonight', icon: 'calendar-line' },
+    { id: 'rollup', label: 'Progress', icon: 'bar-chart-box-line' },
+    { id: 'session', label: 'Session', icon: 'group-line' }
+  ];
 
   return (
     <div className="app-container text-slate-900">
       <header className="bg-linear-to-r from-indigo-600 to-blue-800 p-6 pt-12 text-white shadow-lg">
-        <div className="mx-auto flex max-w-2xl items-center justify-between">
+        <div className="mx-auto flex max-w-5xl items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Vision &amp; Velocity</h1>
             <p className="text-sm text-blue-100 italic">You, amplified</p>
           </div>
-          <button
-            onClick={() => setShowSettings(true)}
-            aria-label="Settings"
-            className="rounded-xl bg-white/20 p-3 transition-colors hover:bg-white/30"
-          >
-            <Icon name="settings-4-line" className="text-xl" />
-          </button>
+          <div className="flex items-center gap-3">
+            {daysToSession !== null && daysToSession >= 0 && (
+              <div className="hidden rounded-xl bg-white/15 px-3 py-2 text-center sm:block">
+                <p className="text-[10px] font-bold uppercase opacity-80">Next session</p>
+                <p className="text-sm font-bold">
+                  {daysToSession === 0 ? 'Today' : `${daysToSession} days`}
+                </p>
+              </div>
+            )}
+            <button
+              onClick={() => setShowSettings(true)}
+              aria-label="Settings"
+              className="rounded-xl bg-white/20 p-3 transition-colors hover:bg-white/30"
+            >
+              <Icon name="settings-4-line" className="text-xl" />
+            </button>
+          </div>
         </div>
       </header>
 
-      <nav className="sticky top-0 z-10 flex justify-center gap-4 border-b border-slate-200 bg-white p-4 shadow-xs">
-        {[
-          { id: 'daily', label: 'Tonight', icon: 'calendar-line' },
-          { id: 'summary', label: 'Session prep', icon: 'bar-chart-box-line' }
-        ].map((item) => (
+      <nav className="sticky top-0 z-10 flex justify-center gap-2 border-b border-slate-200 bg-white p-3 shadow-xs sm:gap-4 sm:p-4">
+        {TABS.map((item) => (
           <button
             key={item.id}
             onClick={() => setTab(item.id)}
@@ -148,8 +231,10 @@ export default function App() {
         ))}
       </nav>
 
-      <main className="mx-auto max-w-2xl space-y-5 p-4">
-        {tab === 'daily' ? (
+      <main
+        className={`mx-auto space-y-5 p-4 ${tab === 'session' ? 'max-w-5xl' : 'max-w-2xl'}`}
+      >
+        {tab === 'daily' && (
           <div className="space-y-5">
             <DateNav
               dateKey={dateKey}
@@ -217,21 +302,38 @@ export default function App() {
               </p>
             </div>
           </div>
-        ) : (
+        )}
+
+        {tab === 'rollup' && (
           <Rollup
             summary={summary}
-            windowDays={CYCLE_DAYS}
+            windowDays={cycleKeys.length}
             onAnalyze={() => runCoach('coaching', 'gap', coachPayloads.gap(entries, cycleKeys, market))}
             isAiLoading={isAiLoading}
             aiResponse={aiResponse}
+          />
+        )}
+
+        {tab === 'session' && (
+          <SessionPrep
+            session={activeSession}
+            sessions={sessions.some((s) => s.id === activeSession.id) ? sessions : [...sessions, activeSession]}
+            entries={entries}
+            goals={goals}
+            name={name}
+            onChange={updateSession}
+            onSetDate={setSessionDate}
+            onMarkSubmitted={() => updateSession('submitted', true)}
           />
         )}
       </main>
 
       {showSettings && (
         <Settings
+          name={name}
           market={market}
           apiKey={apiKey}
+          goals={goals}
           onSave={saveSettings}
           onClose={() => setShowSettings(false)}
         />

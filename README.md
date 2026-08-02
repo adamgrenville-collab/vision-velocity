@@ -90,6 +90,46 @@ who finds the URL. A worked version is in git history (`git log --diff-filter=D
 
 Gemini 1.5 Flash was retired in September 2025; a fresh key returns 404 for it.
 
+## The broker's form
+
+The app exists to serve a fortnightly coaching session. The broker collects prep
+via a Google Form — *"Vision & Velocity Business Coaching: You, Amplified!"*,
+headed *"To be filled out prior to every session!"* — whose responses land in a
+Sheet he shares across all his coaching clients.
+
+**The app fills that form rather than replacing it.** `prefillUrl()` in
+`src/lib/googleForm.js` produces a link that opens his real form with all 17
+answers populated; the agent reviews and submits as normal. Nothing changes on
+his end.
+
+What assembles itself from the nightly logs:
+
+| Form field | Source |
+| --- | --- |
+| Activity snapshot | the eight nightly counters, in the form's own order |
+| What I committed to | the previous session's three actions |
+| Progress made | which of those were ticked, plus consistency |
+| What slowed me down | roadblocks logged that cycle, with dates |
+| Progress toward goals | goals from settings |
+
+**Entry IDs are read from the live form and hardcoded.** If the broker edits a
+question, Google may assign it a NEW id and that answer will silently stop
+prefilling. To re-read them: fetch the form HTML and parse `FB_PUBLIC_LOAD_DATA_`
+— each question carries `[id, title, description, type, [[entryId, ...]]]`.
+
+`# Active Listings` and `# Pendings` are point-in-time states, not running
+totals, so they cannot be derived from event counters and are confirmed by the
+agent each session. Closings shows the year-to-date figure from the logs as a
+hint.
+
+## Sessions
+
+A session is a record, not a rolling window. Its snapshot covers **the days since
+the previous session actually happened** — cadence slips with schedules, and a
+fixed fortnight would quietly mis-report. Broker feedback and the agent's own
+takeaways are captured on the session record for tracking; they never go on the
+form, which is filled in beforehand.
+
 ## Not built yet
 
 `production` (evaluations, listings, pendings, closings), `roadblock`,
