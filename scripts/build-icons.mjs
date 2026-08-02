@@ -28,6 +28,7 @@ const ICONS = [
   'checkbox-blank-circle-line',
   'checkbox-circle-fill',
   'clipboard-line',
+  'close-line',
   'emotion-line',
   'flashlight-line',
   'group-line',

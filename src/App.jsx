@@ -2,10 +2,10 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { todayKey, shiftKey } from './lib/dates.js';
 import { blankEntry, migrateAll, summarize, recentKeys } from './lib/entries.js';
 import { readJson, writeJson, readRaw, writeRaw, remove, KEYS } from './lib/storage.js';
-import { reframeDay, draftSocialPost, gapAnalysis } from './lib/coach.js';
+import { askCoach, coachPayloads } from './lib/coach.js';
 
 import Icon from './components/Icon.jsx';
-import ApiKeySetup from './components/ApiKeySetup.jsx';
+import Settings from './components/Settings.jsx';
 import DateNav from './components/DateNav.jsx';
 import MindsetCheckIn from './components/MindsetCheckIn.jsx';
 import ActionPlan from './components/ActionPlan.jsx';
@@ -14,9 +14,11 @@ import Rollup from './components/Rollup.jsx';
 
 export default function App() {
   const [apiKey, setApiKey] = useState(() => readRaw(KEYS.apiKey) || '');
+  const [market, setMarket] = useState(() => readRaw(KEYS.market) || '');
   const [entries, setEntries] = useState(() => migrateAll(readJson(KEYS.entries, {})));
   const [dateKey, setDateKey] = useState(todayKey);
   const [tab, setTab] = useState('daily');
+  const [showSettings, setShowSettings] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiResponse, setAiResponse] = useState({ type: '', content: '' });
   const [justSaved, setJustSaved] = useState(false);
@@ -82,48 +84,43 @@ export default function App() {
     setTimeout(() => setJustSaved(false), 1600);
   };
 
-  const runCoach = async (type, call) => {
+  const runCoach = async (type, kind, payload) => {
     setIsAiLoading(true);
     try {
-      setAiResponse({ type, content: await call() });
+      const result = await askCoach(kind, payload, apiKey);
+      setAiResponse({ type, content: result.ok ? result.text : result.message });
     } finally {
       setIsAiLoading(false);
     }
   };
 
+  const saveSettings = ({ market: nextMarket, apiKey: nextKey }) => {
+    setMarket(nextMarket);
+    writeRaw(KEYS.market, nextMarket);
+
+    setApiKey(nextKey);
+    if (nextKey) writeRaw(KEYS.apiKey, nextKey);
+    else remove(KEYS.apiKey);
+  };
+
   const weekKeys = recentKeys(entries, 7);
   const summary = summarize(entries, weekKeys);
 
-  const saveApiKey = (key) => {
-    writeRaw(KEYS.apiKey, key);
-    setApiKey(key);
-  };
-
-  const resetApiKey = () => {
-    remove(KEYS.apiKey);
-    setApiKey('');
-  };
-
-  if (!apiKey) return <ApiKeySetup onSave={saveApiKey} />;
-
   return (
     <div className="app-container text-slate-900">
-      <header className="bg-linear-to-r from-red-600 to-blue-800 p-6 pt-12 text-white shadow-lg">
+      <header className="bg-linear-to-r from-indigo-600 to-blue-800 p-6 pt-12 text-white shadow-lg">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Vision &amp; Velocity</h1>
             <p className="text-sm text-blue-100 italic">You, amplified</p>
-            <button
-              onClick={resetApiKey}
-              className="mt-2 flex items-center gap-1 rounded bg-white/20 px-2 py-1 text-[10px] transition-colors hover:bg-white/30"
-            >
-              <Icon name="settings-4-line" /> Reset API key
-            </button>
           </div>
-          <div className="min-w-[80px] rounded-lg bg-white/20 p-2 text-center">
-            <p className="mb-1 text-xs leading-none font-bold tracking-widest uppercase">RE/MAX</p>
-            <p className="text-[10px] leading-none font-medium">Premier</p>
-          </div>
+          <button
+            onClick={() => setShowSettings(true)}
+            aria-label="Settings"
+            className="rounded-xl bg-white/20 p-3 transition-colors hover:bg-white/30"
+          >
+            <Icon name="settings-4-line" className="text-xl" />
+          </button>
         </div>
       </header>
 
@@ -156,8 +153,8 @@ export default function App() {
             <MindsetCheckIn
               mindset={entry.mindset}
               onChange={setMindset}
-              onReframe={() => runCoach('mindset', () => reframeDay(apiKey, entry))}
-              onDraftPost={() => runCoach('social', () => draftSocialPost(apiKey, entry))}
+              onReframe={() => runCoach('mindset', 'reframe', coachPayloads.reframe(entry, market))}
+              onDraftPost={() => runCoach('social', 'social', coachPayloads.social(entry, market))}
               isAiLoading={isAiLoading}
               aiResponse={aiResponse}
             />
@@ -185,12 +182,21 @@ export default function App() {
           <Rollup
             summary={summary}
             dayCount={weekKeys.length}
-            onAnalyze={() => runCoach('coaching', () => gapAnalysis(apiKey, entries, weekKeys))}
+            onAnalyze={() => runCoach('coaching', 'gap', coachPayloads.gap(entries, weekKeys, market))}
             isAiLoading={isAiLoading}
             aiResponse={aiResponse}
           />
         )}
       </main>
+
+      {showSettings && (
+        <Settings
+          market={market}
+          apiKey={apiKey}
+          onSave={saveSettings}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   );
 }

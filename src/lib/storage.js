@@ -52,5 +52,6 @@ export function writeJson(key, value) {
 
 export const KEYS = {
   entries: 'velocity_daily_entries',
-  apiKey: 'velocity_api_key'
+  apiKey: 'velocity_api_key',
+  market: 'velocity_market'
 };
