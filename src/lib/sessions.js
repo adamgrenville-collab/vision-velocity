@@ -10,6 +10,7 @@
  * since the previous session actually happened.
  */
 import { keysInWindow, summarize, ACTIVITY_KEYS } from './entries.js';
+import { todayKey } from './dates.js';
 
 export const DEFAULT_CYCLE_DAYS = 14;
 
@@ -104,18 +105,28 @@ export function nextSession(sessions, date) {
 }
 
 /**
- * Every date key covered by a session: the day after the previous session up to
+ * Every date key a session reports on: the day after the previous session, up to
  * and including the session date. Falls back to a fortnight for the first one.
+ *
+ * The window never runs past today. A session is normally scheduled ahead, and
+ * anchoring on its future date would put the whole window in the future — so
+ * days already logged would be excluded and every total would read zero. It also
+ * keeps "logged 4 of 9 days" honest, rather than counting days that have not
+ * happened yet against the agent.
+ *
+ * `today` is injectable so the behaviour can be tested without wall-clock drift.
  */
-export function windowForSession(sessions, session) {
+export function windowForSession(sessions, session, today = todayKey()) {
   if (!session?.date) return [];
-  const prev = previousSession(sessions, session.date);
-  if (!prev) return keysInWindow(session.date, DEFAULT_CYCLE_DAYS);
 
-  const all = keysInWindow(session.date, 400);
+  const end = session.date < today ? session.date : today;
+  const prev = previousSession(sessions, session.date);
+  if (!prev) return keysInWindow(end, DEFAULT_CYCLE_DAYS);
+
+  const all = keysInWindow(end, 400);
   const start = all.indexOf(prev.date);
   // Exclude the previous session's own day; it was already reported on.
-  return start === -1 ? keysInWindow(session.date, DEFAULT_CYCLE_DAYS) : all.slice(start + 1);
+  return start === -1 ? keysInWindow(end, DEFAULT_CYCLE_DAYS) : all.slice(start + 1);
 }
 
 /** Date keys from Jan 1 of the session's year through the session date. */
@@ -130,7 +141,7 @@ export function ytdKeys(dateKey) {
  * The "Review of Last Session" block, assembled rather than remembered.
  * Returns the text for each of the form's three review answers.
  */
-export function deriveReview(sessions, session, entriesByDate) {
+export function deriveReview(sessions, session, entriesByDate, today = todayKey()) {
   const prev = previousSession(sessions, session.date);
   const committed = (prev?.commitments || []).filter((c) => c.text);
 
@@ -138,7 +149,7 @@ export function deriveReview(sessions, session, entriesByDate) {
     ? committed.map((c, i) => `${i + 1}. ${c.text}`).join('\n')
     : '(no commitments recorded from the previous session)';
 
-  const windowKeys = windowForSession(sessions, session);
+  const windowKeys = windowForSession(sessions, session, today);
   const summary = summarize(entriesByDate, windowKeys);
 
   const done = committed.filter((c) => c.done);

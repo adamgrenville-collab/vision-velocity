@@ -43,7 +43,8 @@ const entries = {
   })
 };
 
-const review = deriveReview([prev, now], now, entries);
+// Pinned so these assert form assembly, not the wall clock.
+const review = deriveReview([prev, now], now, entries, '2026-08-15');
 const goals = [
   { label: 'Listings taken', target: 20, current: 11, unit: '' },
   { label: 'Gym', target: 4, current: 3, unit: 'sessions/wk' },
