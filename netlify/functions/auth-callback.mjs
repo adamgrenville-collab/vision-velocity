@@ -79,7 +79,14 @@ export default async (req) => {
   if (!claims?.sub) return fail('Google did not return an account id.');
 
   const session = await sign(
-    { sub: claims.sub, email: claims.email || '', name: claims.name || '' },
+    {
+      sub: claims.sub,
+      email: claims.email || '',
+      name: claims.name || '',
+      // Cosmetic only — the avatar falls back to initials if it is missing or
+      // fails to load, so nothing depends on it.
+      picture: claims.picture || ''
+    },
     sessionSecret,
     SESSION_TTL_SECONDS
   );

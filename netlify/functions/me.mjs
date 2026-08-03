@@ -28,7 +28,13 @@ export default async (req) => {
   const payload = await verify(readCookie(req.headers.get('cookie'), COOKIE_NAME), secret);
   if (!payload) return json({ signedIn: false, configured: true });
 
-  return json({ signedIn: true, configured: true, email: payload.email || '', name: payload.name || '' });
+  return json({
+    signedIn: true,
+    configured: true,
+    email: payload.email || '',
+    name: payload.name || '',
+    picture: payload.picture || ''
+  });
 };
 
 export const config = { path: '/api/me' };
