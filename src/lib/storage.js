@@ -56,5 +56,29 @@ export const KEYS = {
   market: 'velocity_market',
   name: 'velocity_name',
   sessions: 'velocity_sessions',
-  goals: 'velocity_goals'
+  goals: 'velocity_goals',
+  // Name, market and goals as one record, so they can carry a single
+  // last-edited stamp for merging. The three keys above are read once for
+  // anyone upgrading from before this existed.
+  profile: 'velocity_profile'
 };
+
+/** Name/market/goals, preferring the combined record, falling back to legacy keys. */
+export function readProfile() {
+  const combined = readJson(KEYS.profile, null);
+  if (combined && typeof combined === 'object') {
+    return {
+      name: typeof combined.name === 'string' ? combined.name : '',
+      market: typeof combined.market === 'string' ? combined.market : '',
+      goals: Array.isArray(combined.goals) ? combined.goals : [],
+      updatedAt: Number(combined.updatedAt) || 0
+    };
+  }
+  const goals = readJson(KEYS.goals, []);
+  return {
+    name: readRaw(KEYS.name) || '',
+    market: readRaw(KEYS.market) || '',
+    goals: Array.isArray(goals) ? goals : [],
+    updatedAt: 0
+  };
+}

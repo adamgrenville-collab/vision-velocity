@@ -57,7 +57,10 @@ export function blankEntry() {
     production,
     // The three actions committed to FOR this day. Set the evening before.
     actionPlan: emptyActionPlan(),
-    notes: ''
+    notes: '',
+    // Epoch ms of the last edit, used to merge devices. 0 means "written
+    // before sync existed", which loses to any real edit — see lib/merge.js.
+    updatedAt: 0
   };
 }
 
@@ -108,6 +111,7 @@ export function migrateEntry(raw) {
   }
 
   entry.notes = toText(raw.notes) || toText(raw.pipeline);
+  entry.updatedAt = toCount(raw.updatedAt);
 
   return entry;
 }

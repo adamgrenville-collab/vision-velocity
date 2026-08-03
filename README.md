@@ -122,6 +122,31 @@ totals, so they cannot be derived from event counters and are confirmed by the
 agent each session. Closings shows the year-to-date figure from the logs as a
 hint.
 
+## Sync
+
+Optional Google sign-in, using the **OAuth 2.0 redirect flow** — not Google's JS
+library, which would mean loading a script from Google on every page load and
+breaking the no-runtime-CDN rule this app exists to honour.
+
+- `netlify/functions/auth-start.mjs` → Google consent, with a signed short-lived
+  `state` in both the URL and a cookie (double-submit CSRF).
+- `netlify/functions/auth-callback.mjs` → exchanges the code, sets an
+  HMAC-signed HttpOnly session cookie. No session table.
+- `netlify/functions/data.mjs` → reads/writes one JSON document per user in
+  Netlify Blobs, keyed by the Google account id **from the cookie** — there is no
+  user id in the request for an attacker to change.
+
+**The client merges, not the server** (`src/lib/merge.js`). One implementation,
+identical online and off. Merge is per day with newest-edit-wins, and is
+commutative and idempotent.
+
+Sign-in is optional: with no `GOOGLE_CLIENT_ID` configured, `/api/me` reports
+sign-in unavailable and the button hides itself. The app is fully usable without
+an account, and the API key never syncs — it is a credential and stays per-device.
+
+Required env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`.
+Redirect URI is `<origin>/api/auth/google/callback`.
+
 ## Sessions
 
 A session is a record, not a rolling window. Its snapshot covers **the days since

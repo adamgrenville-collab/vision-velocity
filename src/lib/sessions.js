@@ -49,7 +49,9 @@ export function blankSession(date) {
     // which is filled in beforehand.
     brokerFeedback: '',
     myTakeaways: '',
-    submitted: false
+    submitted: false,
+    // Epoch ms of the last edit — see lib/merge.js.
+    updatedAt: 0
   };
 }
 
@@ -81,6 +83,7 @@ export function migrateSession(raw) {
   session.brokerFeedback = toText(raw.brokerFeedback);
   session.myTakeaways = toText(raw.myTakeaways);
   session.submitted = raw.submitted === true;
+  session.updatedAt = toCount(raw.updatedAt);
 
   return session;
 }

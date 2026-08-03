@@ -42,7 +42,15 @@ Tampa, FL. Phone-first. See [README.md](README.md) for the full rationale.
 9. **Never build a submit path to the form.** The app produces a *prefilled
    viewform link* the agent reviews and submits themselves. Posting to
    `formResponse` on someone's behalf is out of bounds.
-10. **Run `npm run check` before committing.** Lint, tests, build.
+10. **Sign-in is optional and must stay optional.** Every feature works with no
+    account and no network. Signing in adds sync; it never gates anything.
+11. **The client merges, not the server.** `src/lib/merge.js` is the single
+    implementation, so behaviour is identical offline and online. Merge is per
+    day, newest edit wins, and must stay commutative and idempotent — the tests
+    enforce that. Never merge field-by-field: half a counter from each device is
+    a number that never happened.
+12. **The API key never syncs.** It is a credential, it stays per-device.
+13. **Run `npm run check` before committing.** Lint, tests, build.
 
 ## Layout
 
