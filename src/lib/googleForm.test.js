@@ -82,6 +82,31 @@ describe('buildFormAnswers', () => {
     expect(answers.productionYtd).toBe('Active Listings: 4 / Pendings: 2 / Closings: 11');
   });
 
+  it('says nothing about leases when there are none', () => {
+    // A lease-free cycle must produce the answer the form has always received,
+    // character for character — otherwise the counter changes his paperwork.
+    expect(answers.productionYtd).not.toContain('Lease');
+  });
+
+  it('appends leases to the same answer when there are some', () => {
+    const withLeases = buildFormAnswers({
+      session: { ...now, production: { ...now.production, leases: 3 } },
+      review,
+      goals,
+      name: 'Adam Grenville'
+    });
+    expect(withLeases.productionYtd).toBe(
+      'Active Listings: 4 / Pendings: 2 / Closings: 11 / Leases: 3'
+    );
+  });
+
+  it('never invents a form field for leases', () => {
+    // There is no lease question on the broker's form. If one ever appears in
+    // ENTRY, the prefill is writing to an id nobody verified.
+    expect(Object.keys(ENTRY)).not.toContain('leases');
+    expect(FIELD_ORDER.map((f) => f.key)).not.toContain('leases');
+  });
+
   it('carries last session’s commitments into "what I committed to"', () => {
     expect(answers.committedTo).toContain('1. Call 10 past clients');
   });

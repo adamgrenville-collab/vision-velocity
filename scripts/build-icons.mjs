@@ -37,6 +37,7 @@ const ICONS = [
   'flashlight-line',
   'home-4-line',
   'home-smile-line',
+  'key-2-line',
   'list-check-2',
   'loader-4-line',
   'megaphone-line',

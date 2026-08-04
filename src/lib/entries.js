@@ -23,8 +23,23 @@ export const ACTIVITY_KEYS = [
   'coffee'
 ];
 
-// Form: "Listings / Pendings / Closings"
-export const PRODUCTION_KEYS = ['listings', 'pendings', 'closings'];
+/**
+ * Form: "Year to Date: # Active Listings / # Pendings / # Closings".
+ *
+ * `leases` has no dedicated box on that form, but the box is free text and the
+ * agent already writes rentals into it by hand ("4 (2 rental, 2 sfr)"). Leases
+ * are roughly a third of his sides in a good year, so a counter that cannot
+ * see them cannot see the business. It is appended to the form answer only
+ * when there is something to report.
+ */
+export const PRODUCTION_KEYS = ['listings', 'pendings', 'closings', 'leases'];
+
+/** A lease is real work and a real client, at about half the fee of a sale. */
+export const LEASE_WEIGHT = 0.5;
+
+/** Sides, counting a lease as half. The number the annual target is set in. */
+export const weightedSides = (production) =>
+  (production?.closings || 0) + (production?.leases || 0) * LEASE_WEIGHT;
 
 // Form: "Action Plan — three clear actions"
 export const ACTION_PLAN_SLOTS = 3;
@@ -186,7 +201,8 @@ export function summarize(entriesByDate, dateKeys) {
     targetsSet,
     targetsDone,
     conversations,
-    totalActivity
+    totalActivity,
+    weightedSides: weightedSides(totalProduction)
   };
 }
 

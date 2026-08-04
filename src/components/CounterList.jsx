@@ -74,5 +74,6 @@ export const ACTIVITY_ITEMS = [
 export const PRODUCTION_ITEMS = [
   { key: 'listings', label: 'Listings', icon: 'home-4-line' },
   { key: 'pendings', label: 'Pendings', icon: 'time-line' },
-  { key: 'closings', label: 'Closings', icon: 'award-line' }
+  { key: 'closings', label: 'Closings', icon: 'award-line' },
+  { key: 'leases', label: 'Leases', icon: 'key-2-line' }
 ];

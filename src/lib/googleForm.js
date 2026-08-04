@@ -105,8 +105,13 @@ export function buildFormAnswers({ session, review, goals, name }) {
     progressMade: session.review.progressMade || review.progressMade,
     slowedDown: session.review.slowedDown || review.slowedDown,
     activitySnapshot: activityLine(review.summary),
+    // The three counts the form names, in its order. Leases have no box of
+    // their own, so they are appended to the same free-text answer — and only
+    // when there are some, so a lease-free cycle reads exactly as it always
+    // did. This mirrors what was already being written in by hand.
     productionYtd:
-      `Active Listings: ${p.activeListings} / Pendings: ${p.pendings} / Closings: ${p.closings}`,
+      `Active Listings: ${p.activeListings} / Pendings: ${p.pendings} / Closings: ${p.closings}` +
+      (p.leases ? ` / Leases: ${p.leases}` : ''),
     progressTowardGoals: session.goalsNote || goalsText(goals),
     topOpportunities: session.pipeline.topOpportunities,
     whatToActOn: session.pipeline.whatToActOn,

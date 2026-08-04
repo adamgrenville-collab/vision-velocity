@@ -9,7 +9,8 @@ import {
   isBlank,
   ACTIVITY_KEYS,
   PRODUCTION_KEYS,
-  ACTION_PLAN_SLOTS
+  ACTION_PLAN_SLOTS,
+  weightedSides
 } from './entries.js';
 
 describe('the model matches the coaching form', () => {
@@ -26,8 +27,13 @@ describe('the model matches the coaching form', () => {
     ]);
   });
 
-  it('tracks exactly the production the form lists', () => {
-    expect(PRODUCTION_KEYS).toEqual(['listings', 'pendings', 'closings']);
+  it('tracks the production the form lists, in the form\'s order', () => {
+    // The form's own box is free text — "4 (2 rental, 2 sfr)/3 pending" is a
+    // real submitted answer — so `leases` is a deliberate fourth counter, kept
+    // last so the first three still read off in the order the form names them.
+    // It reaches the form appended to the same answer, never as a new field.
+    expect(PRODUCTION_KEYS.slice(0, 3)).toEqual(['listings', 'pendings', 'closings']);
+    expect(PRODUCTION_KEYS).toEqual(['listings', 'pendings', 'closings', 'leases']);
   });
 
   it('commits to three actions, as the form does', () => {
@@ -263,5 +269,35 @@ describe('recentKeys', () => {
     for (let d = 1; d <= 20; d += 1) map[`2026-08-${String(d).padStart(2, '0')}`] = {};
     expect(recentKeys(map, 7)).toHaveLength(7);
     expect(recentKeys(map, 7)[0]).toBe('2026-08-20');
+  });
+});
+
+describe('weighted sides', () => {
+  it('counts a lease as half a closing', () => {
+    expect(weightedSides({ closings: 4, leases: 0 })).toBe(4);
+    expect(weightedSides({ closings: 4, leases: 3 })).toBe(5.5);
+    expect(weightedSides({ closings: 0, leases: 1 })).toBe(0.5);
+  });
+
+  it('survives missing or partial production', () => {
+    expect(weightedSides(undefined)).toBe(0);
+    expect(weightedSides({})).toBe(0);
+    expect(weightedSides({ leases: 2 })).toBe(1);
+  });
+
+  it('ignores listings and pendings, which are states not sides', () => {
+    expect(weightedSides({ listings: 9, pendings: 9, closings: 1, leases: 0 })).toBe(1);
+  });
+
+  it('is reported by summarize across the window', () => {
+    const day = (production) => ({ ...blankEntry(), production: { ...blankEntry().production, ...production } });
+    const entries = { '2026-08-03': day({ closings: 2, leases: 1 }), '2026-08-04': day({ leases: 3 }) };
+    const s = summarize(entries, ['2026-08-03', '2026-08-04']);
+    expect(s.totalProduction.leases).toBe(4);
+    expect(s.weightedSides).toBe(4);
+  });
+
+  it('is zero for an empty window, not undefined', () => {
+    expect(summarize({}, ['2026-08-03']).weightedSides).toBe(0);
   });
 });

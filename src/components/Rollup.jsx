@@ -84,7 +84,7 @@ export default function Rollup({ summary, windowDays, pattern, onAnalyze, isAiLo
           <Icon name="award-line" className="text-xl" />
           <h3>Production</h3>
         </div>
-        <dl className="grid grid-cols-3 gap-2 text-center">
+        <dl className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
           {PRODUCTION_ITEMS.map((item) => (
             <div key={item.key} className="rounded-xl bg-slate-50 py-3">
               <dt className="text-[10px] font-bold text-slate-500 uppercase">{item.label}</dt>
@@ -94,6 +94,15 @@ export default function Rollup({ summary, windowDays, pattern, onAnalyze, isAiLo
             </div>
           ))}
         </dl>
+
+        {summary.weightedSides > 0 && (
+          <p className="mt-3 border-t border-slate-100 pt-3 text-center text-xs text-slate-500">
+            <span className="font-bold text-slate-700">
+              {summary.weightedSides.toLocaleString(undefined, { maximumFractionDigits: 1 })} sides
+            </span>{' '}
+            this cycle, counting a lease as half
+          </p>
+        )}
       </section>
 
       {summary.roadblocks.length > 0 && (

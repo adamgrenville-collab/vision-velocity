@@ -35,7 +35,10 @@ export function blankSession(date) {
     // "Year to Date: # Active Listings / # Pendings / # Closings".
     // Active and pending are point-in-time states that cannot be derived from
     // event counters, so they are confirmed by the agent each session.
-    production: { activeListings: 0, pendings: 0, closings: 0 },
+    // `leases` has no box of its own on that form — it is appended to the same
+    // free-text answer, which is where rentals were already being written by
+    // hand. migrateSession walks these keys, so adding one here migrates it.
+    production: { activeListings: 0, pendings: 0, closings: 0, leases: 0 },
     goalsNote: '',
     pipeline: { topOpportunities: '', whatToActOn: '', nextSteps: '' },
     commitments: [
@@ -194,4 +197,9 @@ export function activityLine(summary) {
 /** Suggested year-to-date closings, from the nightly production tallies. */
 export function suggestedClosings(entriesByDate, dateKey) {
   return summarize(entriesByDate, ytdKeys(dateKey)).totalProduction.closings;
+}
+
+/** Suggested year-to-date leases, from the same tallies. */
+export function suggestedLeases(entriesByDate, dateKey) {
+  return summarize(entriesByDate, ytdKeys(dateKey)).totalProduction.leases;
 }

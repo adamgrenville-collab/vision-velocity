@@ -1,7 +1,13 @@
 import { useMemo, useState } from 'react';
 import Icon from './Icon.jsx';
 import { TextField, DerivedField, NumberField } from './Field.jsx';
-import { deriveReview, activityLine, suggestedClosings, previousSession } from '../lib/sessions.js';
+import {
+  deriveReview,
+  activityLine,
+  suggestedClosings,
+  suggestedLeases,
+  previousSession
+} from '../lib/sessions.js';
 import { buildFormAnswers, prefillUrl, plainText, missingAnswers, FIELD_ORDER } from '../lib/googleForm.js';
 import { formatKey, todayKey } from '../lib/dates.js';
 
@@ -46,6 +52,7 @@ export default function SessionPrep({
   const missing = missingAnswers(answers);
   const prev = previousSession(sessions, session.date);
   const suggestedYtdClosings = suggestedClosings(entries, session.date);
+  const suggestedYtdLeases = suggestedLeases(entries, session.date);
 
   const set = (path) => (value) => onChange(path, value);
 
@@ -139,7 +146,7 @@ export default function SessionPrep({
             value={activityLine(review.summary)}
             note="Totalled from your nightly logs — nothing to add up"
           />
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <NumberField
               label="Active listings"
               value={session.production.activeListings}
@@ -157,6 +164,12 @@ export default function SessionPrep({
               value={session.production.closings}
               onChange={set('production.closings')}
               hint={`Logged this year: ${suggestedYtdClosings}`}
+            />
+            <NumberField
+              label="Leases YTD"
+              value={session.production.leases}
+              onChange={set('production.leases')}
+              hint={`Logged this year: ${suggestedYtdLeases}`}
             />
           </div>
           <TextField
