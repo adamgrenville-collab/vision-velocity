@@ -11,7 +11,8 @@ import {
   dailyProgress,
   weeklyProgress,
   dailyStreak,
-  adherence
+  adherence,
+  weekdayPattern
 } from './standards.js';
 
 // 2026-08-03 is a Monday, 2026-08-07 a Friday, 2026-08-09 a Sunday.
@@ -292,6 +293,94 @@ describe('weekend work', () => {
   it('still never breaks one when it is not', () => {
     const entries = { [THU]: fullDay(), [FRI]: fullDay(), [SAT]: entryWith({ calls: 1 }) };
     expect(dailyStreak(entries, SAT, DEFAULT_STANDARDS)).toBe(2);
+  });
+});
+
+describe('weekdayPattern', () => {
+  // Four consecutive Fridays missed, everything else kept.
+  const fourWeeks = () => {
+    const entries = {};
+    for (let w = 0; w < 4; w += 1) {
+      const monday = `2026-07-${String(6 + w * 7).padStart(2, '0')}`;
+      [0, 1, 2, 3, 4].forEach((offset) => {
+        const [y, m, d] = monday.split('-').map(Number);
+        const date = new Date(y, m - 1, d + offset);
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        entries[key] = offset === 4 ? entryWith({ calls: 1 }) : fullDay();
+      });
+    }
+    return entries;
+  };
+
+  it('reports one row per weekday, Monday first', () => {
+    const { days } = weekdayPattern(fourWeeks(), '2026-07-31', DEFAULT_STANDARDS, 4);
+    expect(days).toHaveLength(5);
+    expect(days.map((d) => d.day)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('finds the weekday that keeps failing', () => {
+    const { days, weakest } = weekdayPattern(fourWeeks(), '2026-07-31', DEFAULT_STANDARDS, 4);
+    expect(weakest.day).toBe(4); // Friday
+    expect(weakest.pct).toBe(0);
+    expect(days[0].pct).toBe(100); // Monday
+  });
+
+  it('stays quiet when every day is roughly equal', () => {
+    const entries = {};
+    for (let i = 0; i < 20; i += 1) {
+      const date = new Date(2026, 6, 6 + i);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      entries[key] = fullDay();
+    }
+    expect(weekdayPattern(entries, '2026-07-31', DEFAULT_STANDARDS, 4).weakest).toBeNull();
+  });
+
+  it('will not call a single bad day a pattern', () => {
+    const entries = { [MON]: fullDay(), [TUE]: fullDay(), [WED]: entryWith({ calls: 1 }) };
+    // One week of data: no weekday has the three occurrences a pattern needs.
+    expect(weekdayPattern(entries, FRI, DEFAULT_STANDARDS, 1).weakest).toBeNull();
+  });
+
+  it('does not hold a booked-off day against the weekday', () => {
+    const entries = { [MON]: dayOff(), [TUE]: fullDay() };
+    const { days } = weekdayPattern(entries, FRI, DEFAULT_STANDARDS, 1);
+    expect(days[0]).toMatchObject({ owed: 0, daysOff: 1, pct: null });
+  });
+
+  it('averages touches per owed day, counting every activity', () => {
+    const entries = { [MON]: entryWith({ calls: 6, texts: 4 }) };
+    const { days } = weekdayPattern(entries, MON, DEFAULT_STANDARDS, 1);
+    expect(days[0]).toMatchObject({ owed: 1, touches: 10, avgTouches: 10 });
+  });
+
+  it('reports no data rather than dividing by zero', () => {
+    const empty = weekdayPattern({}, MON, DEFAULT_STANDARDS, 0);
+    expect(empty.hasData).toBe(false);
+    expect(empty.days.every((d) => d.pct === null)).toBe(true);
+    expect(empty.weakest).toBeNull();
+  });
+});
+
+describe('a blitz week', () => {
+  it('reads as complete even when most days were missed', () => {
+    // A full week of quota done across Thursday and Friday alone.
+    const entries = {
+      [THU]: entryWith({ notes: 10, calls: 25, texts: 50, videos: 5 }),
+      [FRI]: entryWith({ socialPosts: 5, popBys: 5, coffee: 2 })
+    };
+    const week = weeklyProgress(entries, FRI, DEFAULT_STANDARDS);
+    expect(week.complete).toBe(true);
+    expect(week.onPace).toBe(true);
+    expect(week.toFinish).toEqual([]);
+    // ...while the daily record stays honest: only Thursday carried the daily
+    // three, so one working day in five was kept. Both facts are true at once,
+    // and the panel has to show both.
+    expect(adherence(entries, FRI, DEFAULT_STANDARDS, 5)).toMatchObject({ owed: 5, met: 1 });
+  });
+
+  it('is not complete when a quota is genuinely short', () => {
+    const entries = { [FRI]: entryWith({ notes: 10, calls: 25, texts: 50, videos: 5 }) };
+    expect(weeklyProgress(entries, FRI, DEFAULT_STANDARDS).complete).toBe(false);
   });
 });
 

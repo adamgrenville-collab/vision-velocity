@@ -1,5 +1,6 @@
 import Icon from './Icon.jsx';
 import { ACTIVITY_ITEMS, PRODUCTION_ITEMS } from './CounterList.jsx';
+import WeekdayPattern from './WeekdayPattern.jsx';
 
 function Stat({ label, value, sub, tone }) {
   return (
@@ -16,7 +17,7 @@ function Stat({ label, value, sub, tone }) {
  * these totals are the ones that go on the form — the point being that nobody
  * has to add anything up on the drive over.
  */
-export default function Rollup({ summary, windowDays, onAnalyze, isAiLoading, aiResponse }) {
+export default function Rollup({ summary, windowDays, pattern, onAnalyze, isAiLoading, aiResponse }) {
   const followThrough =
     summary.targetsSet > 0 ? Math.round((summary.targetsDone / summary.targetsSet) * 100) : null;
 
@@ -55,6 +56,8 @@ export default function Rollup({ summary, windowDays, onAnalyze, isAiLoading, ai
           tone={summary.daysLogged >= windowDays * 0.7 ? 'bg-emerald-600' : 'bg-amber-500'}
         />
       </div>
+
+      {pattern && <WeekdayPattern pattern={pattern} />}
 
       <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-xs">
         <div className="mb-3 flex items-center gap-2 border-b border-slate-100 pb-3 font-bold text-red-600">

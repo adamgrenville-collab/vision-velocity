@@ -170,12 +170,26 @@ export default function Standards({
             <p
               className={`text-xs font-bold ${weekly.onPace ? 'text-emerald-600' : 'text-amber-600'}`}
             >
-              {weekly.onPace ? 'On pace' : `${weekly.behind.length} behind pace`}
+              {weekly.complete
+                ? 'Week complete'
+                : weekly.onPace
+                  ? 'On pace'
+                  : `${weekly.behind.length} behind pace`}
             </p>
           </div>
           {weekly.items.map((item) => (
             <WeeklyRow key={item.key} item={item} />
           ))}
+
+          {weekly.complete && (
+            <p className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              <Icon name="check-line" className="shrink-0 text-base" />
+              <span>
+                <span className="font-bold">Every quota hit.</span> However the week was shaped, the
+                work is done.
+              </span>
+            </p>
+          )}
 
           {weekly.toFinish.length > 0 && (
             <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">

@@ -15,7 +15,8 @@ import {
   dailyStreak,
   adherence,
   hasAnyStandard,
-  isBusinessDay
+  isBusinessDay,
+  weekdayPattern
 } from './lib/standards.js';
 import { readJson, writeJson, readRaw, writeRaw, remove, readProfile, KEYS } from './lib/storage.js';
 import { askCoach, coachPayloads } from './lib/coach.js';
@@ -32,6 +33,7 @@ import CounterList, { ACTIVITY_ITEMS, PRODUCTION_ITEMS } from './components/Coun
 import Rollup from './components/Rollup.jsx';
 import SessionPrep from './components/SessionPrep.jsx';
 import Standards from './components/Standards.jsx';
+import WeekdayPattern from './components/WeekdayPattern.jsx';
 
 /** Immutably set a dotted path, e.g. "pipeline.nextSteps" or "commitments.1.text". */
 function setIn(target, path, value) {
@@ -267,6 +269,13 @@ export default function App() {
     [entries, entry, dateKey, standards]
   );
 
+  // Always measured from today, not the day being browsed — the pattern is a
+  // property of the habit, not of whichever date happens to be on screen.
+  const pattern = useMemo(
+    () => (hasAnyStandard(standards) ? weekdayPattern(entries, todayKey(), standards) : null),
+    [entries, standards]
+  );
+
   const daysToSession = useMemo(() => {
     const diff = Math.round((new Date(activeSession.date) - new Date(todayKey())) / 86400000);
     return Number.isFinite(diff) ? diff : null;
@@ -416,6 +425,7 @@ export default function App() {
           <Rollup
             summary={summary}
             windowDays={cycleKeys.length}
+            pattern={pattern}
             onAnalyze={() =>
               runCoach('coaching', 'gap', coachPayloads.gap(entries, cycleKeys, profile.market))
             }

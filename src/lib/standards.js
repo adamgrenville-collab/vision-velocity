@@ -180,6 +180,10 @@ export function weeklyProgress(entriesByDate, key, standards) {
     daysOff,
     onPace: items.every((i) => i.onPace),
     behind: items.filter((i) => !i.onPace),
+    // Every quota hit, however unevenly. A week's work done in two days is a
+    // week's work done: these touches are not time-sensitive, and the weekly
+    // view is where that has to be visible.
+    complete: items.length > 0 && items.every((i) => i.done >= i.target),
     // What's left to finish the week. Quotas are batchable, so this is a real
     // to-do list rather than a scold — unlike the daily three, which cannot be
     // caught up and are deliberately absent from it.
@@ -254,6 +258,68 @@ export function adherence(entriesByDate, key, standards, days = 14) {
   }
 
   return { owed, met, bonus, daysOff, pct: owed ? Math.round((met / owed) * 100) : 0 };
+}
+
+/**
+ * Which weekday keeps getting missed.
+ *
+ * Adherence tells you *that* you're at 60%. It doesn't tell you that all of the
+ * misses are Fridays, which is the only version of the number you can act on —
+ * a weekday that keeps failing is a calendar problem, not a character one.
+ *
+ * Deliberately not a deficit. It counts how often each weekday was owed and
+ * kept, never how many calls are "outstanding". Touches are not time-sensitive
+ * and accumulating them into a debt is exactly the framing that makes people
+ * abandon a standard.
+ *
+ * Monday-to-Friday only: weekends and booked-off days are never owed, so they
+ * have no adherence to report.
+ */
+export function weekdayPattern(entriesByDate, key, standards, weeks = 8) {
+  const days = Array.from({ length: 5 }, (_, day) => ({
+    day,
+    owed: 0,
+    met: 0,
+    daysOff: 0,
+    touches: 0,
+    pct: null,
+    avgTouches: 0
+  }));
+
+  let cursor = key;
+  for (let i = 0; i < weeks * 7; i += 1) {
+    const index = mondayIndex(keyToDate(cursor));
+    if (index < 5) {
+      const slot = days[index];
+      const entry = entriesByDate[cursor];
+      const logged = entry && !isBlank(entry);
+
+      if (isDayOff(entriesByDate, cursor)) {
+        slot.daysOff += 1;
+      } else {
+        slot.owed += 1;
+        if (logged && dailyProgress(entry, standards).met) slot.met += 1;
+      }
+      if (logged) {
+        slot.touches += ACTIVITY_KEYS.reduce((sum, k) => sum + (entry.activities?.[k] || 0), 0);
+      }
+    }
+    cursor = shiftKey(cursor, -1);
+  }
+
+  for (const slot of days) {
+    slot.pct = slot.owed ? Math.round((slot.met / slot.owed) * 100) : null;
+    slot.avgTouches = slot.owed ? Math.round(slot.touches / slot.owed) : 0;
+  }
+
+  // Only call out a weak day once there's enough of it to be a pattern rather
+  // than a bad week, and only when some other day is meaningfully better.
+  const rated = days.filter((d) => d.owed >= 3);
+  const worst = rated.reduce((a, b) => (a === null || b.pct < a.pct ? b : a), null);
+  const best = rated.reduce((a, b) => (a === null || b.pct > a.pct ? b : a), null);
+  const weakest = worst && best && best.pct - worst.pct >= 25 ? worst : null;
+
+  return { days, weakest, weeks, hasData: days.some((d) => d.owed > 0) };
 }
 
 /** Today's key, exported here so callers don't reach past this module. */
