@@ -9,7 +9,14 @@ import {
   windowForSession,
   DEFAULT_CYCLE_DAYS
 } from './lib/sessions.js';
-import { dailyProgress, weeklyProgress, dailyStreak, adherence, hasAnyStandard } from './lib/standards.js';
+import {
+  dailyProgress,
+  weeklyProgress,
+  dailyStreak,
+  adherence,
+  hasAnyStandard,
+  isBusinessDay
+} from './lib/standards.js';
 import { readJson, writeJson, readRaw, writeRaw, remove, readProfile, KEYS } from './lib/storage.js';
 import { askCoach, coachPayloads } from './lib/coach.js';
 import { whoAmI, signOut, startSignIn, syncNow, toDocument } from './lib/sync.js';
@@ -175,6 +182,8 @@ export default function App() {
 
   const setMindset = (field, value) =>
     updateEntry((e) => ({ ...e, mindset: { ...e.mindset, [field]: value } }));
+
+  const toggleDayOff = () => updateEntry((e) => ({ ...e, dayOff: !e.dayOff }));
 
   const adjust = (group) => (key, delta) =>
     updateEntry((e) => ({
@@ -350,6 +359,9 @@ export default function App() {
               <Standards
                 {...standardsView}
                 isToday={dateKey === todayKey()}
+                isWeekend={!isBusinessDay(dateKey)}
+                dayOff={entry.dayOff}
+                onToggleDayOff={toggleDayOff}
                 onEdit={() => setShowSettings(true)}
               />
             )}

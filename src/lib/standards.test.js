@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { blankEntry } from './entries.js';
+import { blankEntry, migrateEntry, isBlank } from './entries.js';
 import {
   DEFAULT_STANDARDS,
   migrateStandards,
   hasAnyStandard,
   weekKeys,
   isBusinessDay,
+  isDayOff,
   businessDaysElapsed,
   dailyProgress,
   weeklyProgress,
@@ -24,6 +25,7 @@ const SUN = '2026-08-09';
 
 const entryWith = (activities) => ({ ...blankEntry(), activities: { ...blankEntry().activities, ...activities } });
 const fullDay = () => entryWith({ calls: 5, notes: 2, videos: 1 });
+const dayOff = () => ({ ...blankEntry(), dayOff: true });
 
 describe('migrateStandards', () => {
   it('returns the defaults for junk input', () => {
@@ -198,10 +200,113 @@ describe('adherence', () => {
     const entries = { [MON]: fullDay(), [TUE]: fullDay(), [WED]: entryWith({ calls: 5 }) };
     // Mon-Wed is three business days owed, two met.
     const score = adherence(entries, WED, DEFAULT_STANDARDS, 3);
-    expect(score).toEqual({ owed: 3, met: 2, pct: 67 });
+    expect(score).toMatchObject({ owed: 3, met: 2, pct: 67 });
   });
 
   it('never owes a weekend', () => {
     expect(adherence({}, SUN, DEFAULT_STANDARDS, 2).owed).toBe(0);
+  });
+
+  it('counts weekend work as a bonus, outside the percentage', () => {
+    const entries = { [FRI]: fullDay(), [SAT]: fullDay(), [SUN]: fullDay() };
+    const score = adherence(entries, SUN, DEFAULT_STANDARDS, 3);
+    expect(score).toMatchObject({ owed: 1, met: 1, bonus: 2, pct: 100 });
+  });
+
+  it('does not owe a booked-off day', () => {
+    const entries = { [MON]: fullDay(), [TUE]: dayOff(), [WED]: fullDay() };
+    const score = adherence(entries, WED, DEFAULT_STANDARDS, 3);
+    expect(score).toMatchObject({ owed: 2, met: 2, daysOff: 1, pct: 100 });
+  });
+
+  it('credits a booked-off day that was worked anyway as bonus', () => {
+    const entries = { [MON]: fullDay(), [TUE]: { ...fullDay(), dayOff: true }, [WED]: fullDay() };
+    const score = adherence(entries, WED, DEFAULT_STANDARDS, 3);
+    expect(score).toMatchObject({ owed: 2, met: 2, bonus: 1, pct: 100 });
+  });
+});
+
+describe('deliberate days off', () => {
+  it('is only a weekday concept — a weekend is never "off"', () => {
+    expect(isDayOff({ [TUE]: dayOff() }, TUE)).toBe(true);
+    expect(isDayOff({ [SAT]: dayOff() }, SAT)).toBe(false);
+    expect(isDayOff({ [TUE]: fullDay() }, TUE)).toBe(false);
+    expect(isDayOff({}, TUE)).toBe(false);
+  });
+
+  it('survives a round trip through migration', () => {
+    expect(migrateEntry({ dayOff: true }).dayOff).toBe(true);
+    expect(migrateEntry({ dayOff: 'yes' }).dayOff).toBe(false);
+    expect(migrateEntry({}).dayOff).toBe(false);
+  });
+
+  it('is never treated as a blank day, or it would not persist', () => {
+    expect(isBlank(dayOff())).toBe(false);
+    expect(isBlank(blankEntry())).toBe(true);
+  });
+
+  it('does not break a streak', () => {
+    const entries = { [MON]: fullDay(), [TUE]: dayOff(), [WED]: fullDay() };
+    expect(dailyStreak(entries, WED, DEFAULT_STANDARDS)).toBe(2);
+  });
+
+  it('shrinks what the week owes rather than creating a shortfall', () => {
+    const off = { [WED]: dayOff() };
+    const week = weeklyProgress(off, FRI, DEFAULT_STANDARDS);
+    expect(week.owedDays).toBe(4);
+    expect(week.daysOff).toBe(1);
+    // 25 calls over five days becomes 20 over four.
+    expect(week.items.find((i) => i.key === 'calls').target).toBe(20);
+  });
+
+  it('does not punish the days around it', () => {
+    // Mon and Tue at standard, Wed booked off. On Wednesday the week owes two
+    // days of quota, and two days of calls have been made.
+    const entries = { [MON]: entryWith({ calls: 10 }), [TUE]: entryWith({ calls: 10 }), [WED]: dayOff() };
+    const week = weeklyProgress(entries, WED, DEFAULT_STANDARDS);
+    expect(week.elapsed).toBe(2);
+    expect(week.items.find((i) => i.key === 'calls').onPace).toBe(true);
+  });
+
+  it('owes nothing at all in a week taken entirely off', () => {
+    const entries = Object.fromEntries([MON, TUE, WED, THU, FRI].map((d) => [d, dayOff()]));
+    const week = weeklyProgress(entries, FRI, DEFAULT_STANDARDS);
+    expect(week.owedDays).toBe(0);
+    expect(week.onPace).toBe(true);
+    expect(week.items.every((i) => i.owed === 0)).toBe(true);
+  });
+});
+
+describe('weekend work', () => {
+  it('counts toward the weekly quota', () => {
+    const entries = { [SAT]: entryWith({ popBys: 5 }) };
+    const week = weeklyProgress(entries, SUN, DEFAULT_STANDARDS);
+    expect(week.items.find((i) => i.key === 'popBys').done).toBe(5);
+  });
+
+  it('extends a streak when the standard is met', () => {
+    const entries = { [FRI]: fullDay(), [SAT]: fullDay(), [SUN]: fullDay() };
+    expect(dailyStreak(entries, SUN, DEFAULT_STANDARDS)).toBe(3);
+  });
+
+  it('still never breaks one when it is not', () => {
+    const entries = { [THU]: fullDay(), [FRI]: fullDay(), [SAT]: entryWith({ calls: 1 }) };
+    expect(dailyStreak(entries, SAT, DEFAULT_STANDARDS)).toBe(2);
+  });
+});
+
+describe('toFinish', () => {
+  it('lists only what is left, and never a daily non-negotiable', () => {
+    const entries = { [MON]: entryWith({ calls: 25, texts: 50, popBys: 5, socialPosts: 5, coffee: 2, notes: 10 }) };
+    const week = weeklyProgress(entries, MON, DEFAULT_STANDARDS);
+    // Everything above is complete; videos alone remain.
+    expect(week.toFinish.map((i) => i.key)).toEqual(['videos']);
+  });
+
+  it('is empty on a finished week', () => {
+    const done = entryWith({
+      notes: 10, calls: 25, texts: 50, videos: 5, socialPosts: 5, popBys: 5, coffee: 2
+    });
+    expect(weeklyProgress({ [MON]: done }, FRI, DEFAULT_STANDARDS).toFinish).toEqual([]);
   });
 });

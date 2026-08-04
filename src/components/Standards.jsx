@@ -15,12 +15,13 @@ import { ACTIVITY_ITEMS } from './CounterList.jsx';
 
 const ITEM = Object.fromEntries(ACTIVITY_ITEMS.map((i) => [i.key, i]));
 
-/** "2 calls" but "1 call" — the counter labels are all plural on the form. */
-function owedPhrase(item) {
-  const label = (ITEM[item.key]?.label || item.key).toLowerCase();
-  const noun = item.remaining === 1 && label.endsWith('s') ? label.slice(0, -1) : label;
-  return `${item.remaining} ${noun}`;
+/** "calls" but "call" for one — the counter labels are all plural on the form. */
+function plural(key, count) {
+  const label = (ITEM[key]?.label || key).toLowerCase();
+  return count === 1 && label.endsWith('s') ? label.slice(0, -1) : label;
 }
+
+const owedPhrase = (item) => `${item.remaining} ${plural(item.key, item.remaining)}`;
 
 function DailyChip({ item }) {
   const { label, icon } = ITEM[item.key] || { label: item.key, icon: 'checkbox-blank-circle-line' };
@@ -67,8 +68,22 @@ function WeeklyRow({ item }) {
   );
 }
 
-export default function Standards({ daily, weekly, streak, adherence, isToday, onEdit }) {
+export default function Standards({
+  daily,
+  weekly,
+  streak,
+  adherence,
+  isToday,
+  isWeekend,
+  dayOff,
+  onToggleDayOff,
+  onEdit
+}) {
   const remaining = daily.items.filter((i) => !i.met);
+  // Nothing is owed on a weekend or a booked-off day. Anything logged on one is
+  // credit, never a debt, and the copy has to say so plainly.
+  const owed = !isWeekend && !dayOff;
+  const label = dayOff ? 'Booked off' : isWeekend ? 'Weekend · not owed' : 'Non-negotiable';
 
   return (
     <section className="space-y-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-xs">
@@ -89,7 +104,7 @@ export default function Standards({ daily, weekly, streak, adherence, isToday, o
         <div>
           <div className="mb-2 flex items-center justify-between">
             <p className="text-[10px] font-bold text-slate-500 uppercase">
-              {isToday ? 'Today' : 'That day'} · non-negotiable
+              {isToday ? 'Today' : 'That day'} · {label}
             </p>
             {streak > 0 && (
               <p className="flex items-center gap-1 text-xs font-bold text-amber-600">
@@ -99,24 +114,49 @@ export default function Standards({ daily, weekly, streak, adherence, isToday, o
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            {daily.items.map((item) => (
-              <DailyChip key={item.key} item={item} />
-            ))}
-          </div>
+          {dayOff && !daily.met ? (
+            <div className="rounded-2xl bg-slate-50 px-4 py-5 text-center">
+              <Icon name="moon-line" className="text-2xl text-slate-400" />
+              <p className="mt-1 text-sm font-bold text-slate-600">Booked off. Not a miss.</p>
+              <p className="text-xs text-slate-500">
+                This day is out of the week's total and off your adherence score.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                {daily.items.map((item) => (
+                  <DailyChip key={item.key} item={item} />
+                ))}
+              </div>
 
-          <p className="mt-2 text-center text-xs text-slate-500">
-            {daily.met ? (
-              <span className="font-bold text-emerald-700">Standard met. The day counts.</span>
-            ) : (
-              <>
-                Still owed:{' '}
-                <span className="font-bold text-slate-700">
-                  {remaining.map(owedPhrase).join(', ')}
-                </span>
-              </>
-            )}
-          </p>
+              <p className="mt-2 text-center text-xs text-slate-500">
+                {daily.met ? (
+                  <span className="font-bold text-emerald-700">
+                    {owed ? 'Standard met. The day counts.' : 'Met on a day you owed nothing. Banked.'}
+                  </span>
+                ) : owed ? (
+                  <>
+                    Still owed:{' '}
+                    <span className="font-bold text-slate-700">
+                      {remaining.map(owedPhrase).join(', ')}
+                    </span>
+                  </>
+                ) : (
+                  <span>Anything logged here counts toward the week. Nothing is owed.</span>
+                )}
+              </p>
+            </>
+          )}
+
+          {!isWeekend && (
+            <button
+              onClick={onToggleDayOff}
+              className="mx-auto mt-2 block rounded-lg px-3 py-1 text-xs font-bold text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+            >
+              {dayOff ? 'Actually, I worked this day' : 'Book this day off'}
+            </button>
+          )}
         </div>
       )}
 
@@ -124,7 +164,8 @@ export default function Standards({ daily, weekly, streak, adherence, isToday, o
         <div className="border-t border-slate-100 pt-3">
           <div className="mb-1 flex items-center justify-between">
             <p className="text-[10px] font-bold text-slate-500 uppercase">
-              This week · day {weekly.elapsed} of 5
+              This week · day {weekly.elapsed} of {weekly.owedDays}
+              {weekly.daysOff > 0 && ` · ${weekly.daysOff} off`}
             </p>
             <p
               className={`text-xs font-bold ${weekly.onPace ? 'text-emerald-600' : 'text-amber-600'}`}
@@ -135,16 +176,28 @@ export default function Standards({ daily, weekly, streak, adherence, isToday, o
           {weekly.items.map((item) => (
             <WeeklyRow key={item.key} item={item} />
           ))}
+
+          {weekly.toFinish.length > 0 && (
+            <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <span className="font-bold text-slate-700">To finish the week:</span>{' '}
+              {weekly.toFinish.map((i) => `${i.remaining} ${plural(i.key, i.remaining)}`).join(', ')}.
+              Quotas can be batched — these are still catchable.
+            </p>
+          )}
         </div>
       )}
 
-      {adherence.owed > 0 && (
+      {(adherence.owed > 0 || adherence.daysOff > 0) && (
         <p className="border-t border-slate-100 pt-3 text-center text-xs text-slate-400">
           Last two weeks: standard met{' '}
           <span className="font-bold text-slate-600">
             {adherence.met} of {adherence.owed}
           </span>{' '}
           working days ({adherence.pct}%)
+          {adherence.bonus > 0 && (
+            <span className="text-emerald-600"> · +{adherence.bonus} unowed</span>
+          )}
+          {adherence.daysOff > 0 && ` · ${adherence.daysOff} booked off`}
         </p>
       )}
     </section>

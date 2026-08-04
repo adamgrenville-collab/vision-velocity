@@ -57,6 +57,10 @@ export function blankEntry() {
     production,
     // The three actions committed to FOR this day. Set the evening before.
     actionPlan: emptyActionPlan(),
+    // A weekday deliberately taken off. Not a miss: it is excused from the
+    // daily standard and removed from what the week owes. Rest that was
+    // planned is part of the job; only unplanned absence is a gap.
+    dayOff: false,
     notes: '',
     // Epoch ms of the last edit, used to merge devices. 0 means "written
     // before sync existed", which loses to any real edit — see lib/merge.js.
@@ -110,6 +114,7 @@ export function migrateEntry(raw) {
     });
   }
 
+  entry.dayOff = raw.dayOff === true;
   entry.notes = toText(raw.notes) || toText(raw.pipeline);
   entry.updatedAt = toCount(raw.updatedAt);
 
@@ -129,6 +134,9 @@ export function migrateAll(raw) {
 /** True when nothing has been logged — used to keep untouched days out of storage. */
 export function isBlank(entry) {
   if (!entry) return true;
+  // Marking a day off is a decision, not an absence. If this returned true the
+  // flag would never be written and the day would come back as a miss.
+  if (entry.dayOff) return false;
   const noCounts =
     ACTIVITY_KEYS.every((k) => !entry.activities?.[k]) &&
     PRODUCTION_KEYS.every((k) => !entry.production?.[k]);

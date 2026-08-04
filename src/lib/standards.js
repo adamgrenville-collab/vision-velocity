@@ -83,12 +83,36 @@ export function weekKeys(key) {
 /** True for Mon-Fri. Weekend work still counts toward totals; it just isn't owed. */
 export const isBusinessDay = (key) => mondayIndex(keyToDate(key)) < 5;
 
+/** A weekday the agent deliberately booked off. Weekends are never "off" — they're just weekends. */
+export const isDayOff = (entriesByDate, key) =>
+  isBusinessDay(key) && entriesByDate?.[key]?.dayOff === true;
+
 /**
  * Business days elapsed in the week up to and including `key`, capped at 5.
  * Saturday and Sunday both report 5 — by the weekend the full week is owed.
  */
 export function businessDaysElapsed(key) {
   return Math.min(mondayIndex(keyToDate(key)) + 1, 5);
+}
+
+/**
+ * What the week actually owes, in days: the five business days less any booked
+ * off. A four-day week owes four fifths of every quota, so taking Wednesday off
+ * doesn't quietly turn the rest of the week amber.
+ */
+export function weekOwedDays(entriesByDate, key) {
+  const days = weekKeys(key).filter(isBusinessDay);
+  const off = days.filter((day) => isDayOff(entriesByDate, day)).length;
+  return Math.max(0, 5 - off);
+}
+
+/** Business days elapsed less those booked off — the numerator for pace. */
+export function elapsedOwedDays(entriesByDate, key) {
+  const elapsed = weekKeys(key)
+    .filter((day) => isBusinessDay(day) && day <= key)
+    .filter((day) => !isDayOff(entriesByDate, day));
+  // On a weekend, every business day of the week has elapsed.
+  return isBusinessDay(key) ? elapsed.length : weekOwedDays(entriesByDate, key);
 }
 
 /**
@@ -122,16 +146,21 @@ export function dailyProgress(entry, standards) {
  */
 export function weeklyProgress(entriesByDate, key, standards) {
   const keys = weekKeys(key);
-  const elapsed = businessDaysElapsed(key);
+  const elapsed = elapsedOwedDays(entriesByDate, key);
+  const owedDays = weekOwedDays(entriesByDate, key);
+  const daysOff = 5 - owedDays;
 
   const items = ACTIVITY_KEYS.filter((k) => standards?.[k]?.weekly > 0).map((metric) => {
-    const target = standards[metric].weekly;
+    // The full week's target, scaled down if days were booked off. A four-day
+    // week is not a five-day week with a shortfall.
+    const target = Math.ceil((standards[metric].weekly * owedDays) / 5);
     let done = 0;
     for (const day of keys) {
       if (day > key) break; // don't count days that haven't happened
+      // Weekend and day-off activity counts. Working Saturday is still work.
       done += entriesByDate[day]?.activities?.[metric] || 0;
     }
-    const owed = Math.ceil((target * elapsed) / 5);
+    const owed = owedDays ? Math.ceil((target * elapsed) / owedDays) : 0;
     return {
       key: metric,
       done,
@@ -147,8 +176,14 @@ export function weeklyProgress(entriesByDate, key, standards) {
     items,
     weekStart: keys[0],
     elapsed,
+    owedDays,
+    daysOff,
     onPace: items.every((i) => i.onPace),
-    behind: items.filter((i) => !i.onPace)
+    behind: items.filter((i) => !i.onPace),
+    // What's left to finish the week. Quotas are batchable, so this is a real
+    // to-do list rather than a scold — unlike the daily three, which cannot be
+    // caught up and are deliberately absent from it.
+    toFinish: items.filter((i) => i.remaining > 0)
   };
 }
 
@@ -168,38 +203,57 @@ export function dailyStreak(entriesByDate, key, standards, lookback = 90) {
   let cursor = key;
 
   for (let i = 0; i < lookback; i += 1) {
-    if (isBusinessDay(cursor)) {
-      const entry = entriesByDate[cursor];
-      if (entry && !isBlank(entry) && dailyProgress(entry, standards).met) {
-        streak += 1;
-      } else if (i === 0) {
-        // Today is still in play — start counting from yesterday instead.
-      } else {
-        break;
-      }
+    const entry = entriesByDate[cursor];
+    const met = entry && !isBlank(entry) && dailyProgress(entry, standards).met;
+    const owed = isBusinessDay(cursor) && !isDayOff(entriesByDate, cursor);
+
+    if (met) {
+      // Counts wherever it happens — a Saturday or a booked-off day that was
+      // worked anyway extends the streak. Effort is never penalised.
+      streak += 1;
+    } else if (owed && i > 0) {
+      break;
     }
+    // Everything else — an unowed day not worked, or a today still in play —
+    // is skipped: neither credit nor a break.
     cursor = shiftKey(cursor, -1);
   }
 
   return streak;
 }
 
-/** Business days in the last `days` where the daily standard was met. */
+/**
+ * How often the standard was actually kept over the last `days`.
+ *
+ * `owed` counts only business days that weren't booked off, so planned rest
+ * never drags the percentage down. `bonus` counts days that were met but never
+ * owed — weekend work and days booked off but worked anyway — reported
+ * separately so the percentage stays an honest out-of-100.
+ */
 export function adherence(entriesByDate, key, standards, days = 14) {
   let owed = 0;
   let met = 0;
+  let bonus = 0;
+  let daysOff = 0;
   let cursor = key;
 
   for (let i = 0; i < days; i += 1) {
-    if (isBusinessDay(cursor)) {
+    const entry = entriesByDate[cursor];
+    const hit = entry && !isBlank(entry) && dailyProgress(entry, standards).met;
+    const off = isDayOff(entriesByDate, cursor);
+
+    if (off) daysOff += 1;
+
+    if (isBusinessDay(cursor) && !off) {
       owed += 1;
-      const entry = entriesByDate[cursor];
-      if (entry && !isBlank(entry) && dailyProgress(entry, standards).met) met += 1;
+      if (hit) met += 1;
+    } else if (hit) {
+      bonus += 1;
     }
     cursor = shiftKey(cursor, -1);
   }
 
-  return { owed, met, pct: owed ? Math.round((met / owed) * 100) : 0 };
+  return { owed, met, bonus, daysOff, pct: owed ? Math.round((met / owed) * 100) : 0 };
 }
 
 /** Today's key, exported here so callers don't reach past this module. */
