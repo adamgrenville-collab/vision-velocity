@@ -10,6 +10,8 @@ logs
 !.vscode/extensions.json
 .idea
 .DS_Store
+# Local dev-server launch config; machine-specific (npm.cmd on Windows).
+.claude/
 
 # Never commit a Gemini key.
 .env

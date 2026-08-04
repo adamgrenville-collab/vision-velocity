@@ -9,6 +9,7 @@ import {
   windowForSession,
   DEFAULT_CYCLE_DAYS
 } from './lib/sessions.js';
+import { dailyProgress, weeklyProgress, dailyStreak, adherence, hasAnyStandard } from './lib/standards.js';
 import { readJson, writeJson, readRaw, writeRaw, remove, readProfile, KEYS } from './lib/storage.js';
 import { askCoach, coachPayloads } from './lib/coach.js';
 import { whoAmI, signOut, startSignIn, syncNow, toDocument } from './lib/sync.js';
@@ -23,6 +24,7 @@ import ActionPlan from './components/ActionPlan.jsx';
 import CounterList, { ACTIVITY_ITEMS, PRODUCTION_ITEMS } from './components/CounterList.jsx';
 import Rollup from './components/Rollup.jsx';
 import SessionPrep from './components/SessionPrep.jsx';
+import Standards from './components/Standards.jsx';
 
 /** Immutably set a dotted path, e.g. "pipeline.nextSteps" or "commitments.1.text". */
 function setIn(target, path, value) {
@@ -219,6 +221,7 @@ export default function App() {
       name: next.name,
       market: next.market,
       goals: next.goals,
+      standards: next.standards,
       updatedAt: Date.now()
     });
     setApiKey(next.apiKey);
@@ -237,6 +240,23 @@ export default function App() {
     [sessions, activeSession]
   );
   const summary = useMemo(() => summarize(entries, cycleKeys), [entries, cycleKeys]);
+
+  // Standards are measured against whichever day is on screen, so paging back
+  // to Tuesday answers "did I hold the standard on Tuesday" rather than always
+  // re-reporting today.
+  const standards = profile.standards;
+  const standardsView = useMemo(
+    () =>
+      hasAnyStandard(standards)
+        ? {
+            daily: dailyProgress(entry, standards),
+            weekly: weeklyProgress(entries, dateKey, standards),
+            streak: dailyStreak(entries, dateKey, standards),
+            adherence: adherence(entries, dateKey, standards)
+          }
+        : null,
+    [entries, entry, dateKey, standards]
+  );
 
   const daysToSession = useMemo(() => {
     const diff = Math.round((new Date(activeSession.date) - new Date(todayKey())) / 86400000);
@@ -326,6 +346,14 @@ export default function App() {
               aiResponse={aiResponse}
             />
 
+            {standardsView && (
+              <Standards
+                {...standardsView}
+                isToday={dateKey === todayKey()}
+                onEdit={() => setShowSettings(true)}
+              />
+            )}
+
             <CounterList
               title="Activity"
               icon="flashlight-line"
@@ -406,6 +434,7 @@ export default function App() {
           market={profile.market}
           apiKey={apiKey}
           goals={profile.goals}
+          standards={standards}
           onSave={saveSettings}
           onClose={() => setShowSettings(false)}
         />

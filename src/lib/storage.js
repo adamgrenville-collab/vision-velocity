@@ -5,6 +5,7 @@
  * write. Neither should ever take the app down, so every access is guarded and
  * failures degrade to "this session just won't persist".
  */
+import { migrateStandards } from './standards.js';
 
 export function readRaw(key) {
   try {
@@ -71,6 +72,10 @@ export function readProfile() {
       name: typeof combined.name === 'string' ? combined.name : '',
       market: typeof combined.market === 'string' ? combined.market : '',
       goals: Array.isArray(combined.goals) ? combined.goals : [],
+      // Absent for anyone who saved a profile before standards existed, which
+      // is why this is a migration and not a plain read — they get the
+      // defaults rather than an empty panel.
+      standards: migrateStandards(combined.standards),
       updatedAt: Number(combined.updatedAt) || 0
     };
   }
@@ -79,6 +84,7 @@ export function readProfile() {
     name: readRaw(KEYS.name) || '',
     market: readRaw(KEYS.market) || '',
     goals: Array.isArray(goals) ? goals : [],
+    standards: migrateStandards(null),
     updatedAt: 0
   };
 }
