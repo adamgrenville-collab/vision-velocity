@@ -12,6 +12,7 @@
  * server must build the prompt — see git history for a worked version.
  */
 import { buildPrompt, rowsFromEntries } from './prompts.js';
+import { failureMessage } from './coachErrors.js';
 
 export const GEMINI_MODEL = 'gemini-2.5-flash';
 
@@ -52,13 +53,53 @@ export async function askCoach(kind, payload, apiKey) {
 
   const result = await response.json().catch(() => ({}));
 
+  // Not every failure is a bad key — see ./coachErrors.js.
   if (!response.ok) {
-    const detail = result?.error?.message || `HTTP ${response.status}`;
-    return { ok: false, message: `Your API key was rejected: ${detail}` };
+    return { ok: false, message: failureMessage(response.status, result?.error) };
   }
 
   const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-  return text ? { ok: true, text } : { ok: false, message: MESSAGES.upstream };
+  if (text) return { ok: true, text };
+
+  // A 200 with no text usually means the response was cut off or filtered.
+  const reason = result?.candidates?.[0]?.finishReason;
+  if (reason && reason !== 'STOP') {
+    return {
+      ok: false,
+      message: `The coach stopped early (${reason}). Try rephrasing what you logged, or ask again.`
+    };
+  }
+  return { ok: false, message: MESSAGES.upstream };
+}
+
+/**
+ * A minimal call, purely to find out whether a key works and say why not.
+ * Used by the "Test key" button so a failure names its own cause instead of
+ * being inferred from a coaching button that did nothing.
+ */
+export async function testKey(apiKey) {
+  const key = String(apiKey || '').trim();
+  if (!key) return { ok: false, message: MESSAGES.no_key };
+
+  let response;
+  try {
+    response = await fetch(`${ENDPOINT}/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: 'Reply with the single word: ready' }] }],
+        generationConfig: { maxOutputTokens: 10 }
+      })
+    });
+  } catch {
+    return { ok: false, message: MESSAGES.offline };
+  }
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return { ok: false, message: failureMessage(response.status, result?.error) };
+  }
+  return { ok: true, message: `Working — ${GEMINI_MODEL} answered.` };
 }
 
 export const coachPayloads = {

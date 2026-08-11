@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Icon from './Icon.jsx';
 import { ACTIVITY_ITEMS } from './CounterList.jsx';
 import { migrateStandards, DEFAULT_STANDARDS } from '../lib/standards.js';
+import { testKey } from '../lib/coach.js';
 
 const blankGoal = () => ({ label: '', target: 0, current: 0, unit: '' });
 
@@ -14,7 +15,17 @@ export default function Settings({ name, market, apiKey, goals, standards, onSav
     standards: migrateStandards(standards)
   });
 
+  const [keyTest, setKeyTest] = useState({ state: 'idle', message: '' });
+
   const setField = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }));
+
+  // Tests the key as typed, before saving — so a bad paste is caught here
+  // rather than surfacing later as a coaching button that does nothing.
+  const runKeyTest = async () => {
+    setKeyTest({ state: 'testing', message: '' });
+    const result = await testKey(draft.apiKey);
+    setKeyTest({ state: result.ok ? 'ok' : 'failed', message: result.message });
+  };
 
   const setGoal = (index, key, value) =>
     setDraft((d) => ({
@@ -211,6 +222,31 @@ export default function Settings({ name, market, apiKey, goals, standards, onSav
             Only needed for the AI coach — everything else works without it. Free from Google AI
             Studio, stored on this device, sent only to Google.
           </p>
+
+          <button
+            type="button"
+            onClick={runKeyTest}
+            disabled={!draft.apiKey.trim() || keyTest.state === 'testing'}
+            className="mt-2 flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-40"
+          >
+            <Icon
+              name={keyTest.state === 'testing' ? 'loader-4-line' : 'sparkling-line'}
+              className={keyTest.state === 'testing' ? 'animate-spin' : ''}
+            />
+            {keyTest.state === 'testing' ? 'Testing…' : 'Test this key'}
+          </button>
+
+          {keyTest.message && (
+            <p
+              className={`mt-2 rounded-lg border p-2 text-xs ${
+                keyTest.state === 'ok'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : 'border-amber-200 bg-amber-50 text-amber-900'
+              }`}
+            >
+              {keyTest.message}
+            </p>
+          )}
         </div>
 
         <button
