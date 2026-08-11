@@ -74,25 +74,15 @@ export const FIELD_ORDER = [
 /** Every field on the form is required, so an empty one is worth warning about. */
 export const REQUIRED_KEYS = FIELD_ORDER.map((f) => f.key);
 
-function goalsText(goals) {
-  const listed = (goals || []).filter((g) => g.label);
-  if (!listed.length) return '';
-  return listed
-    .map((g) => {
-      const target = Number(g.target) || 0;
-      const current = Number(g.current) || 0;
-      if (!target) return `${g.label}: ${current}${g.unit ? ` ${g.unit}` : ''}`;
-      const pct = Math.round((current / target) * 100);
-      return `${g.label}: ${current} of ${target}${g.unit ? ` ${g.unit}` : ''} (${pct}%)`;
-    })
-    .join('\n');
-}
-
 /**
  * Assemble every form answer. Anything the agent typed on the session screen
  * wins; everything else is derived from the nightly logs.
+ *
+ * `goalsSummary` arrives already built (see lib/goals.js `goalsNarrative`),
+ * because working it out needs the daily log and the coaching cycle, neither of
+ * which this module has any business knowing about.
  */
-export function buildFormAnswers({ session, review, goals, name }) {
+export function buildFormAnswers({ session, review, goalsSummary = '', name }) {
   const p = session.production;
 
   return {
@@ -112,7 +102,7 @@ export function buildFormAnswers({ session, review, goals, name }) {
     productionYtd:
       `Active Listings: ${p.activeListings} / Pendings: ${p.pendings} / Closings: ${p.closings}` +
       (p.leases ? ` / Leases: ${p.leases}` : ''),
-    progressTowardGoals: session.goalsNote || goalsText(goals),
+    progressTowardGoals: session.goalsNote || goalsSummary,
     topOpportunities: session.pipeline.topOpportunities,
     whatToActOn: session.pipeline.whatToActOn,
     nextSteps: session.pipeline.nextSteps,

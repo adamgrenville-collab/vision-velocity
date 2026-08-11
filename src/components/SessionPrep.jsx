@@ -11,6 +11,7 @@ import {
 import { buildFormAnswers, prefillUrl, plainText, missingAnswers, FIELD_ORDER } from '../lib/googleForm.js';
 import { formatKey, todayKey } from '../lib/dates.js';
 import { mindsetSummary, mindsetNarrative } from '../lib/mindset.js';
+import { goalsNarrative, migrateGoals } from '../lib/goals.js';
 import MindsetReview from './MindsetReview.jsx';
 
 function Card({ title, icon, accent, children, wide }) {
@@ -46,9 +47,18 @@ export default function SessionPrep({
     [sessions, session, entries]
   );
 
+  const goalsSummary = useMemo(
+    () =>
+      goalsNarrative(migrateGoals(goals), entries, todayKey(), {
+        start: review.windowKeys[0],
+        end: review.windowKeys[review.windowKeys.length - 1]
+      }),
+    [goals, entries, review.windowKeys]
+  );
+
   const answers = useMemo(
-    () => buildFormAnswers({ session, review, goals, name }),
-    [session, review, goals, name]
+    () => buildFormAnswers({ session, review, goalsSummary, name }),
+    [session, review, goalsSummary, name]
   );
 
   const mindset = useMemo(

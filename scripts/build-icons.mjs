@@ -34,6 +34,7 @@ const ICONS = [
   'cup-line',
   'emotion-line',
   'fire-line',
+  'flag-line',
   'flashlight-line',
   'home-4-line',
   'home-smile-line',

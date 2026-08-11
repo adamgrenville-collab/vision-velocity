@@ -227,6 +227,39 @@ export function dailyStreak(entriesByDate, key, standards, lookback = 90) {
 }
 
 /**
+ * The longest run of met days in the lookback window — what the current streak
+ * is measured against.
+ *
+ * Same rules as `dailyStreak`, with one difference: today gets no grace. An
+ * unfinished today should not be allowed to claim a personal best it has not
+ * earned yet.
+ */
+export function bestStreak(entriesByDate, key, standards, lookback = 365) {
+  const hasDaily = ACTIVITY_KEYS.some((k) => standards?.[k]?.daily > 0);
+  if (!hasDaily) return 0;
+
+  let best = 0;
+  let run = 0;
+  let cursor = key;
+
+  for (let i = 0; i < lookback; i += 1) {
+    const entry = entriesByDate[cursor];
+    const met = entry && !isBlank(entry) && dailyProgress(entry, standards).met;
+    const owed = isBusinessDay(cursor) && !isDayOff(entriesByDate, cursor);
+
+    if (met) {
+      run += 1;
+      if (run > best) best = run;
+    } else if (owed) {
+      run = 0;
+    }
+    cursor = shiftKey(cursor, -1);
+  }
+
+  return best;
+}
+
+/**
  * How often the standard was actually kept over the last `days`.
  *
  * `owed` counts only business days that weren't booked off, so planned rest

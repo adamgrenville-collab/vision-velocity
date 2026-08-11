@@ -13,11 +13,13 @@ import {
   dailyProgress,
   weeklyProgress,
   dailyStreak,
+  bestStreak,
   adherence,
   hasAnyStandard,
   isBusinessDay,
   weekdayPattern
 } from './lib/standards.js';
+import { groupByPeriod, migrateGoals } from './lib/goals.js';
 import { readJson, writeJson, readRaw, writeRaw, remove, readProfile, KEYS } from './lib/storage.js';
 import { askCoach, coachPayloads } from './lib/coach.js';
 import { whoAmI, signOut, startSignIn, syncNow, toDocument } from './lib/sync.js';
@@ -33,7 +35,8 @@ import CounterList, { ACTIVITY_ITEMS, PRODUCTION_ITEMS } from './components/Coun
 import Rollup from './components/Rollup.jsx';
 import SessionPrep from './components/SessionPrep.jsx';
 import Standards from './components/Standards.jsx';
-import WeekdayPattern from './components/WeekdayPattern.jsx';
+import StreakBadge from './components/StreakBadge.jsx';
+import Goals from './components/Goals.jsx';
 
 /** Immutably set a dotted path, e.g. "pipeline.nextSteps" or "commitments.1.text". */
 function setIn(target, path, value) {
@@ -276,6 +279,30 @@ export default function App() {
     [entries, standards]
   );
 
+  // Goals set against "this coaching cycle" follow the real gap between
+  // sessions, so a session that slips moves the goal with it.
+  const cycleRange = useMemo(
+    () =>
+      cycleKeys.length
+        ? { start: cycleKeys[0], end: cycleKeys[cycleKeys.length - 1] }
+        : null,
+    [cycleKeys]
+  );
+
+  const goalGroups = useMemo(
+    () => groupByPeriod(migrateGoals(profile.goals), entries, todayKey(), cycleRange),
+    [profile.goals, entries, cycleRange]
+  );
+
+  const streak = useMemo(
+    () => ({
+      current: hasAnyStandard(standards) ? dailyStreak(entries, todayKey(), standards) : 0,
+      best: hasAnyStandard(standards) ? bestStreak(entries, todayKey(), standards) : 0,
+      metToday: Boolean(standardsView?.daily?.met)
+    }),
+    [entries, standards, standardsView]
+  );
+
   const daysToSession = useMemo(() => {
     const diff = Math.round((new Date(activeSession.date) - new Date(todayKey())) / 86400000);
     return Number.isFinite(diff) ? diff : null;
@@ -422,16 +449,20 @@ export default function App() {
         )}
 
         {tab === 'rollup' && (
-          <Rollup
-            summary={summary}
-            windowDays={cycleKeys.length}
-            pattern={pattern}
-            onAnalyze={() =>
-              runCoach('coaching', 'gap', coachPayloads.gap(entries, cycleKeys, profile.market))
-            }
-            isAiLoading={isAiLoading}
-            aiResponse={aiResponse}
-          />
+          <div className="space-y-5">
+            <StreakBadge current={streak.current} best={streak.best} metToday={streak.metToday} />
+            <Goals groups={goalGroups} onEdit={() => setShowSettings(true)} />
+            <Rollup
+              summary={summary}
+              windowDays={cycleKeys.length}
+              pattern={pattern}
+              onAnalyze={() =>
+                runCoach('coaching', 'gap', coachPayloads.gap(entries, cycleKeys, profile.market))
+              }
+              isAiLoading={isAiLoading}
+              aiResponse={aiResponse}
+            />
+          </div>
         )}
 
         {tab === 'session' && (

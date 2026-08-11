@@ -45,11 +45,9 @@ const entries = {
 
 // Pinned so these assert form assembly, not the wall clock.
 const review = deriveReview([prev, now], now, entries, '2026-08-15');
-const goals = [
-  { label: 'Listings taken', target: 20, current: 11, unit: '' },
-  { label: 'Gym', target: 4, current: 3, unit: 'sessions/wk' },
-  { label: 'Read', target: 0, current: 2, unit: 'books' }
-];
+// buildFormAnswers takes an already-built summary — the maths behind it lives
+// in goals.js and is tested there.
+const goalsSummary = 'This year\nSides: 9 of 24 — 6 behind pace';
 
 describe('field ids', () => {
   it('has an entry id for every field on the form', () => {
@@ -65,7 +63,7 @@ describe('field ids', () => {
 });
 
 describe('buildFormAnswers', () => {
-  const answers = buildFormAnswers({ session: now, review, goals, name: 'Adam Grenville' });
+  const answers = buildFormAnswers({ session: now, review, goalsSummary, name: 'Adam Grenville' });
 
   it('fills the identity fields', () => {
     expect(answers.name).toBe('Adam Grenville');
@@ -92,7 +90,7 @@ describe('buildFormAnswers', () => {
     const withLeases = buildFormAnswers({
       session: { ...now, production: { ...now.production, leases: 3 } },
       review,
-      goals,
+      goalsSummary,
       name: 'Adam Grenville'
     });
     expect(withLeases.productionYtd).toBe(
@@ -120,19 +118,28 @@ describe('buildFormAnswers', () => {
       ...now,
       commitments: [{ text: 'Only one', done: false }, { text: '', done: false }, { text: '', done: false }]
     });
-    const out = buildFormAnswers({ session: sparse, review, goals, name: 'A' });
+    const out = buildFormAnswers({ session: sparse, review, goalsSummary, name: 'A' });
     expect(out.threeActions).toBe('1. Only one');
   });
 
-  it('summarises goals, including ones with no numeric target', () => {
-    expect(answers.progressTowardGoals).toContain('Listings taken: 11 of 20 (55%)');
-    expect(answers.progressTowardGoals).toContain('Gym: 3 of 4 sessions/wk (75%)');
-    expect(answers.progressTowardGoals).toContain('Read: 2 books');
+  it('passes the goals summary straight through', () => {
+    expect(answers.progressTowardGoals).toBe(goalsSummary);
+  });
+
+  it('lets the agent override the goals summary by typing one', () => {
+    const edited = migrateSession({ ...now, goalsNote: 'Ahead on listings, behind on calls' });
+    const out = buildFormAnswers({ session: edited, review, goalsSummary, name: 'A' });
+    expect(out.progressTowardGoals).toBe('Ahead on listings, behind on calls');
+  });
+
+  it('leaves the answer blank when there are no goals at all', () => {
+    const out = buildFormAnswers({ session: now, review, name: 'A' });
+    expect(out.progressTowardGoals).toBe('');
   });
 
   it('prefers what the agent typed over what was derived', () => {
     const edited = migrateSession({ ...now, review: { progressMade: 'My own words', slowedDown: 'Mine too' } });
-    const out = buildFormAnswers({ session: edited, review, goals, name: 'A' });
+    const out = buildFormAnswers({ session: edited, review, goalsSummary, name: 'A' });
     expect(out.progressMade).toBe('My own words');
     expect(out.slowedDown).toBe('Mine too');
   });
@@ -145,12 +152,12 @@ describe('buildFormAnswers', () => {
 
 describe('missingAnswers', () => {
   it('is empty when everything is filled', () => {
-    const complete = buildFormAnswers({ session: now, review, goals, name: 'Adam' });
+    const complete = buildFormAnswers({ session: now, review, goalsSummary, name: 'Adam' });
     expect(missingAnswers(complete)).toEqual([]);
   });
 
   it('names the blanks, since every form field is required', () => {
-    const bare = buildFormAnswers({ session: blankSession('2026-08-15'), review, goals, name: '' });
+    const bare = buildFormAnswers({ session: blankSession('2026-08-15'), review, goalsSummary, name: '' });
     const missing = missingAnswers(bare);
     expect(missing).toContain('name');
     expect(missing).toContain('feeling');
@@ -163,7 +170,7 @@ describe('missingAnswers', () => {
 });
 
 describe('prefillUrl', () => {
-  const answers = buildFormAnswers({ session: now, review, goals, name: 'Adam Grenville' });
+  const answers = buildFormAnswers({ session: now, review, goalsSummary, name: 'Adam Grenville' });
   const url = prefillUrl(answers);
 
   it('points at the broker’s form', () => {
@@ -203,7 +210,7 @@ describe('prefillUrl', () => {
 
 describe('plainText', () => {
   it('groups the answers under the form’s own headings', () => {
-    const text = plainText(buildFormAnswers({ session: now, review, goals, name: 'Adam' }));
+    const text = plainText(buildFormAnswers({ session: now, review, goalsSummary, name: 'Adam' }));
     expect(text).toContain('MINDSET CHECK IN');
     expect(text).toContain('PIPELINE FOCUS');
     expect(text).toContain('Took the Oak St listing');
