@@ -10,6 +10,8 @@ import {
 } from '../lib/sessions.js';
 import { buildFormAnswers, prefillUrl, plainText, missingAnswers, FIELD_ORDER } from '../lib/googleForm.js';
 import { formatKey, todayKey } from '../lib/dates.js';
+import { mindsetSummary, mindsetNarrative } from '../lib/mindset.js';
+import MindsetReview from './MindsetReview.jsx';
 
 function Card({ title, icon, accent, children, wide }) {
   return (
@@ -48,6 +50,12 @@ export default function SessionPrep({
     () => buildFormAnswers({ session, review, goals, name }),
     [session, review, goals, name]
   );
+
+  const mindset = useMemo(
+    () => mindsetSummary(entries, review.windowKeys),
+    [entries, review.windowKeys]
+  );
+  const mindsetLine = useMemo(() => mindsetNarrative(mindset), [mindset]);
 
   const missing = missingAnswers(answers);
   const prev = previousSession(sessions, session.date);
@@ -115,6 +123,8 @@ export default function SessionPrep({
             onChange={set('mindset.belief')}
           />
         </Card>
+
+        <MindsetReview summary={mindset} narrative={mindsetLine} />
 
         <Card title="Review of last session" icon="time-line" accent="text-indigo-600">
           <DerivedField
