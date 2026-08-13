@@ -22,7 +22,7 @@ import {
 import { groupByPeriod, migrateGoals } from './lib/goals.js';
 import { readJson, writeJson, readRaw, writeRaw, remove, readProfile, KEYS } from './lib/storage.js';
 import { askCoach, coachPayloads } from './lib/coach.js';
-import { whoAmI, signOut, startSignIn, syncNow, toDocument } from './lib/sync.js';
+import { whoAmI, signOut, startSignIn, syncNow, toDocument, getNotes } from './lib/sync.js';
 import { differs } from './lib/merge.js';
 
 import Icon from './components/Icon.jsx';
@@ -37,6 +37,8 @@ import SessionPrep from './components/SessionPrep.jsx';
 import Standards from './components/Standards.jsx';
 import StreakBadge from './components/StreakBadge.jsx';
 import Goals from './components/Goals.jsx';
+import MentorNotes from './components/MentorNotes.jsx';
+import AlarmNudge from './components/AlarmNudge.jsx';
 
 /** Immutably set a dotted path, e.g. "pipeline.nextSteps" or "commitments.1.text". */
 function setIn(target, path, value) {
@@ -54,6 +56,9 @@ export default function App() {
 
   const [account, setAccount] = useState({ signedIn: false, configured: false });
   const [syncStatus, setSyncStatus] = useState('idle');
+  const [notes, setNotes] = useState([]);
+  const [notesSeenAt, setNotesSeenAt] = useState(() => Number(readRaw(KEYS.notesSeenAt)) || 0);
+  const [alarmNudged, setAlarmNudged] = useState(() => readRaw(KEYS.alarmNudged) === '1');
 
   const [dateKey, setDateKey] = useState(todayKey);
   const [tab, setTab] = useState('daily');
@@ -143,6 +148,28 @@ export default function App() {
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [account.signedIn, runSync]);
+
+  // Mentor notes are read separately from the synced document: a mentor writes
+  // them while the agent is not looking, and the agent's own save replaces that
+  // document wholesale. Keeping them apart means neither writer clobbers the other.
+  useEffect(() => {
+    if (!account.signedIn) {
+      setNotes([]);
+      return;
+    }
+    getNotes().then(setNotes);
+  }, [account.signedIn]);
+
+  const markNotesSeen = () => {
+    const now = Date.now();
+    setNotesSeenAt(now);
+    writeRaw(KEYS.notesSeenAt, String(now));
+  };
+
+  const dismissAlarmNudge = () => {
+    setAlarmNudged(true);
+    writeRaw(KEYS.alarmNudged, '1');
+  };
 
   // ---- editing --------------------------------------------------------------
   const updateEntryFor = useCallback((key, mutate) => {
@@ -371,6 +398,12 @@ export default function App() {
               onToday={() => goToDate(todayKey())}
             />
 
+            {/* Only once there is a habit worth protecting — prompting on day
+                one is how a tool gets deleted. */}
+            {!alarmNudged && summary.daysLogged >= 3 && (
+              <AlarmNudge onDismiss={dismissAlarmNudge} />
+            )}
+
             <ActionPlan
               title="Today's focus"
               subtitle="What you committed to last night"
@@ -451,6 +484,7 @@ export default function App() {
         {tab === 'rollup' && (
           <div className="space-y-5">
             <StreakBadge current={streak.current} best={streak.best} metToday={streak.metToday} />
+            <MentorNotes notes={notes} lastSeenAt={notesSeenAt} onMarkSeen={markNotesSeen} />
             <Goals groups={goalGroups} onEdit={() => setShowSettings(true)} />
             <Rollup
               summary={summary}
@@ -488,6 +522,7 @@ export default function App() {
           apiKey={apiKey}
           goals={profile.goals}
           standards={standards}
+          signedIn={account.signedIn}
           onSave={saveSettings}
           onClose={() => setShowSettings(false)}
         />

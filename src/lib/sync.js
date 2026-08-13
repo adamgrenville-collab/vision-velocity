@@ -79,6 +79,68 @@ export async function syncNow(local) {
   }
 }
 
+// ---- sharing ---------------------------------------------------------------
+
+/** The agent's own share link: { sharing, token }. */
+export async function getShare() {
+  try {
+    return await getJson('/api/share');
+  } catch {
+    return { sharing: false, token: null };
+  }
+}
+
+export async function createShare() {
+  try {
+    return await getJson('/api/share', { method: 'POST' });
+  } catch {
+    return null;
+  }
+}
+
+export async function revokeShare() {
+  try {
+    return await getJson('/api/share', { method: 'DELETE' });
+  } catch {
+    return null;
+  }
+}
+
+/** Notes a mentor has left for the signed-in agent. */
+export async function getNotes() {
+  try {
+    const data = await getJson('/api/notes');
+    return Array.isArray(data.notes) ? data.notes : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Read a shared snapshot — used by the mentor's view, no account needed. */
+export async function fetchShared(token) {
+  const response = await fetch(`/api/shared?token=${encodeURIComponent(token)}`);
+  if (!response.ok) {
+    const error = new Error(`HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+}
+
+export async function postNote(token, author, text) {
+  const response = await fetch(`/api/shared?token=${encodeURIComponent(token)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ author, text })
+  });
+  if (!response.ok) {
+    const error = new Error(`HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+}
+
 /** Shape the app's separate pieces of state into one syncable document. */
 export const toDocument = (entries, sessions, profile) => ({
   version: 1,

@@ -3,10 +3,20 @@ import Icon from './Icon.jsx';
 import { ACTIVITY_ITEMS } from './CounterList.jsx';
 import { migrateStandards, DEFAULT_STANDARDS } from '../lib/standards.js';
 import { testKey } from '../lib/coach.js';
+import ShareSettings from './ShareSettings.jsx';
 
 import { blankGoal, migrateGoal, migrateGoals, METRICS, PERIODS } from '../lib/goals.js';
 
-export default function Settings({ name, market, apiKey, goals, standards, onSave, onClose }) {
+export default function Settings({
+  name,
+  market,
+  apiKey,
+  goals,
+  standards,
+  signedIn,
+  onSave,
+  onClose
+}) {
   const [draft, setDraft] = useState({
     name,
     market,
@@ -271,6 +281,8 @@ export default function Settings({ name, market, apiKey, goals, standards, onSav
             ))}
           </div>
         </div>
+
+        <ShareSettings signedIn={signedIn} />
 
         <div className="mb-6">
           <label htmlFor="apiKey" className="text-[10px] font-bold text-slate-500 uppercase">

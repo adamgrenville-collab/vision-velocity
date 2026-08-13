@@ -61,7 +61,11 @@ export const KEYS = {
   // Name, market and goals as one record, so they can carry a single
   // last-edited stamp for merging. The three keys above are read once for
   // anyone upgrading from before this existed.
-  profile: 'velocity_profile'
+  profile: 'velocity_profile',
+  // Per-device, never synced: when this device last looked at mentor notes,
+  // and whether the alarm prompt has been dismissed here.
+  notesSeenAt: 'velocity_notes_seen_at',
+  alarmNudged: 'velocity_alarm_nudged'
 };
 
 /** Name/market/goals, preferring the combined record, falling back to legacy keys. */
