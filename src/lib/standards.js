@@ -192,71 +192,76 @@ export function weeklyProgress(entriesByDate, key, standards) {
 }
 
 /**
- * Consecutive business days ending at `key` where the daily standard was met.
+ * Walking back day by day, counting a run of days that satisfy `qualifies`.
  *
- * Weekends are skipped rather than counted or broken — nobody should lose a
- * streak for not making calls on a Sunday. Today only breaks the streak once
- * it is over: an unfinished today is not yet a failure, so if today is short
- * the count simply starts from yesterday.
- */
-export function dailyStreak(entriesByDate, key, standards, lookback = 90) {
-  const hasDaily = ACTIVITY_KEYS.some((k) => standards?.[k]?.daily > 0);
-  if (!hasDaily) return 0;
-
-  let streak = 0;
-  let cursor = key;
-
-  for (let i = 0; i < lookback; i += 1) {
-    const entry = entriesByDate[cursor];
-    const met = entry && !isBlank(entry) && dailyProgress(entry, standards).met;
-    const owed = isBusinessDay(cursor) && !isDayOff(entriesByDate, cursor);
-
-    if (met) {
-      // Counts wherever it happens — a Saturday or a booked-off day that was
-      // worked anyway extends the streak. Effort is never penalised.
-      streak += 1;
-    } else if (owed && i > 0) {
-      break;
-    }
-    // Everything else — an unowed day not worked, or a today still in play —
-    // is skipped: neither credit nor a break.
-    cursor = shiftKey(cursor, -1);
-  }
-
-  return streak;
-}
-
-/**
- * The longest run of met days in the lookback window — what the current streak
- * is measured against.
+ * The rules are subtle and shared by every streak, which is why they live in
+ * one place rather than being written out per streak and quietly drifting:
  *
- * Same rules as `dailyStreak`, with one difference: today gets no grace. An
- * unfinished today should not be allowed to claim a personal best it has not
- * earned yet.
+ *   - Weekends and booked days off are skipped, not counted and not broken.
+ *     A streak that punishes you for resting is one you stop caring about.
+ *   - A qualifying day always counts, even on a weekend or a booked-off day.
+ *     Effort is never penalised.
+ *   - Today gets grace on the CURRENT streak — an unfinished today is not yet
+ *     a failure — but never on the best, which must be earned.
  */
-export function bestStreak(entriesByDate, key, standards, lookback = 365) {
-  const hasDaily = ACTIVITY_KEYS.some((k) => standards?.[k]?.daily > 0);
-  if (!hasDaily) return 0;
-
+function walkStreak(entriesByDate, key, qualifies, { lookback, longest }) {
   let best = 0;
   let run = 0;
   let cursor = key;
 
   for (let i = 0; i < lookback; i += 1) {
     const entry = entriesByDate[cursor];
-    const met = entry && !isBlank(entry) && dailyProgress(entry, standards).met;
+    const met = Boolean(entry) && !isBlank(entry) && qualifies(entry);
     const owed = isBusinessDay(cursor) && !isDayOff(entriesByDate, cursor);
 
     if (met) {
       run += 1;
       if (run > best) best = run;
-    } else if (owed) {
+    } else if (owed && (longest || i > 0)) {
+      if (!longest) return run;
       run = 0;
     }
     cursor = shiftKey(cursor, -1);
   }
 
-  return best;
+  return longest ? best : run;
+}
+
+const hasDailyStandard = (standards) => ACTIVITY_KEYS.some((k) => standards?.[k]?.daily > 0);
+
+/** Consecutive days ending at `key` where the daily standard was met. */
+export function dailyStreak(entriesByDate, key, standards, lookback = 90) {
+  if (!hasDailyStandard(standards)) return 0;
+  return walkStreak(entriesByDate, key, (e) => dailyProgress(e, standards).met, {
+    lookback,
+    longest: false
+  });
+}
+
+/** The longest run of standard-met days — what the current streak is measured against. */
+export function bestStreak(entriesByDate, key, standards, lookback = 365) {
+  if (!hasDailyStandard(standards)) return 0;
+  return walkStreak(entriesByDate, key, (e) => dailyProgress(e, standards).met, {
+    lookback,
+    longest: true
+  });
+}
+
+/**
+ * Consecutive days where *anything at all* was logged.
+ *
+ * This is the streak that matters first. Hitting the standard is the harder,
+ * later thing; opening the app and being honest about the day is the habit
+ * everything else depends on. Counting only standard-met days meant somebody
+ * logging faithfully but short of five calls saw a zero — punishing precisely
+ * the behaviour the app exists to build.
+ */
+export function loggedStreak(entriesByDate, key, lookback = 90) {
+  return walkStreak(entriesByDate, key, () => true, { lookback, longest: false });
+}
+
+export function bestLoggedStreak(entriesByDate, key, lookback = 365) {
+  return walkStreak(entriesByDate, key, () => true, { lookback, longest: true });
 }
 
 /**

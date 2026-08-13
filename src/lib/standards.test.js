@@ -11,6 +11,9 @@ import {
   dailyProgress,
   weeklyProgress,
   dailyStreak,
+  bestStreak,
+  loggedStreak,
+  bestLoggedStreak,
   adherence,
   weekdayPattern
 } from './standards.js';
@@ -397,5 +400,118 @@ describe('toFinish', () => {
       notes: 10, calls: 25, texts: 50, videos: 5, socialPosts: 5, popBys: 5, coffee: 2
     });
     expect(weeklyProgress({ [MON]: done }, FRI, DEFAULT_STANDARDS).toFinish).toEqual([]);
+  });
+});
+
+describe('loggedStreak — the habit before the standard', () => {
+  // One call is nowhere near the daily standard, but it is a logged day.
+  const thin = () => entryWith({ calls: 1 });
+
+  it('counts days where anything at all was logged', () => {
+    const entries = { [MON]: thin(), [TUE]: thin(), [WED]: thin() };
+    expect(loggedStreak(entries, WED)).toBe(3);
+  });
+
+  it('rewards showing up even when the standard was missed', () => {
+    // The whole reason this exists: a faithful logger who is short of five
+    // calls used to see a zero, which punished the habit being built.
+    const entries = { [MON]: thin(), [TUE]: thin(), [WED]: thin() };
+    expect(dailyStreak(entries, WED, DEFAULT_STANDARDS)).toBe(0);
+    expect(loggedStreak(entries, WED)).toBe(3);
+  });
+
+  it('does not count a blank day as logged', () => {
+    const entries = { [MON]: thin(), [TUE]: blankEntry(), [WED]: thin() };
+    expect(loggedStreak(entries, WED)).toBe(1);
+  });
+
+  it('breaks on a missed business day', () => {
+    const entries = { [MON]: thin(), [WED]: thin() };
+    expect(loggedStreak(entries, WED)).toBe(1);
+  });
+
+  it('does not punish an unfinished today', () => {
+    const entries = { [MON]: thin(), [TUE]: thin() };
+    expect(loggedStreak(entries, WED)).toBe(2);
+  });
+
+  it('skips a weekend rather than breaking on it', () => {
+    const entries = { [THU]: thin(), [FRI]: thin(), '2026-08-10': thin() };
+    expect(loggedStreak(entries, '2026-08-10')).toBe(3);
+  });
+
+  it('counts weekend work as a bonus rather than ignoring it', () => {
+    const entries = { [FRI]: thin(), [SAT]: thin(), [SUN]: thin() };
+    expect(loggedStreak(entries, SUN)).toBe(3);
+  });
+
+  it('counts a booked day off as showing up', () => {
+    // Deciding to rest and recording it is engaging with the app, not an
+    // absence — isBlank treats the flag as a real entry for the same reason.
+    const entries = { [MON]: thin(), [TUE]: dayOff(), [WED]: thin() };
+    expect(loggedStreak(entries, WED)).toBe(3);
+  });
+
+  it('still bridges a day off that was never opened at all', () => {
+    // No entry whatsoever on a business day breaks it; that is the difference
+    // between resting on purpose and simply not turning up.
+    const entries = { [MON]: thin(), [WED]: thin() };
+    expect(loggedStreak(entries, WED)).toBe(1);
+  });
+
+  it('needs no standards configured at all', () => {
+    // Unlike dailyStreak, this is meaningful before anything is set up.
+    const entries = { [MON]: thin(), [TUE]: thin() };
+    expect(loggedStreak(entries, TUE)).toBe(2);
+  });
+
+  it('is zero with nothing logged', () => {
+    expect(loggedStreak({}, WED)).toBe(0);
+  });
+});
+
+describe('bestLoggedStreak', () => {
+  const thin = () => entryWith({ calls: 1 });
+
+  it('finds the longest past run, not the current one', () => {
+    const entries = {
+      '2026-07-27': thin(), // Mon
+      '2026-07-28': thin(),
+      '2026-07-29': thin(),
+      '2026-07-30': thin(), // four in a row, then a miss on the 31st
+      [TUE]: thin(),
+      [WED]: thin()
+    };
+    expect(loggedStreak(entries, WED)).toBe(2);
+    expect(bestLoggedStreak(entries, WED)).toBe(4);
+  });
+
+  it('gives today no grace, because a best must be earned', () => {
+    const entries = { [MON]: thin(), [TUE]: thin() };
+    expect(loggedStreak(entries, WED)).toBe(2);
+    expect(bestLoggedStreak(entries, WED)).toBe(2);
+  });
+
+  it('is zero with nothing logged', () => {
+    expect(bestLoggedStreak({}, WED)).toBe(0);
+  });
+});
+
+describe('bestStreak', () => {
+  it('finds the longest run of standard-met days', () => {
+    const entries = {
+      '2026-07-27': fullDay(),
+      '2026-07-28': fullDay(),
+      '2026-07-29': fullDay(),
+      [TUE]: fullDay()
+    };
+    expect(bestStreak(entries, WED, DEFAULT_STANDARDS)).toBe(3);
+  });
+
+  it('is zero when no daily standard is set', () => {
+    const none = migrateStandards(
+      Object.fromEntries(Object.keys(DEFAULT_STANDARDS).map((k) => [k, { daily: 0, weekly: 0 }]))
+    );
+    expect(bestStreak({ [MON]: fullDay() }, MON, none)).toBe(0);
   });
 });

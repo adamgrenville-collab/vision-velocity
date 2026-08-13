@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { todayKey, shiftKey, formatKey } from './lib/dates.js';
-import { blankEntry, migrateAll, summarize } from './lib/entries.js';
+import { blankEntry, migrateAll, summarize, isBlank } from './lib/entries.js';
 import {
   blankSession,
   migrateSessions,
@@ -14,6 +14,8 @@ import {
   weeklyProgress,
   dailyStreak,
   bestStreak,
+  loggedStreak,
+  bestLoggedStreak,
   adherence,
   hasAnyStandard,
   isBusinessDay,
@@ -321,13 +323,17 @@ export default function App() {
     [profile.goals, entries, cycleRange]
   );
 
+  // Two streaks: showing up, and hitting the standard. The first is the habit
+  // the second depends on, so it is the one shown large.
   const streak = useMemo(
     () => ({
-      current: hasAnyStandard(standards) ? dailyStreak(entries, todayKey(), standards) : 0,
-      best: hasAnyStandard(standards) ? bestStreak(entries, todayKey(), standards) : 0,
-      metToday: Boolean(standardsView?.daily?.met)
+      logged: loggedStreak(entries, todayKey()),
+      bestLogged: bestLoggedStreak(entries, todayKey()),
+      standard: hasAnyStandard(standards) ? dailyStreak(entries, todayKey(), standards) : 0,
+      bestStandard: hasAnyStandard(standards) ? bestStreak(entries, todayKey(), standards) : 0,
+      metToday: !isBlank(entries[todayKey()])
     }),
-    [entries, standards, standardsView]
+    [entries, standards]
   );
 
   const daysToSession = useMemo(() => {
@@ -483,7 +489,7 @@ export default function App() {
 
         {tab === 'rollup' && (
           <div className="space-y-5">
-            <StreakBadge current={streak.current} best={streak.best} metToday={streak.metToday} />
+            <StreakBadge {...streak} />
             <MentorNotes notes={notes} lastSeenAt={notesSeenAt} onMarkSeen={markNotesSeen} />
             <Goals groups={goalGroups} onEdit={() => setShowSettings(true)} />
             <Rollup
